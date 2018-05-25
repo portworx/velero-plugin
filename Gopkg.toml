@@ -1,0 +1,46 @@
+
+# Gopkg.toml example
+#
+# Refer to https://github.com/golang/dep/blob/master/docs/Gopkg.toml.md
+# for detailed Gopkg.toml documentation.
+#
+# required = ["github.com/user/thing/cmd/thing"]
+# ignored = ["github.com/user/project/pkgX", "bitbucket.org/user/project/pkgA/pkgY"]
+#
+# [[constraint]]
+#   name = "github.com/user/project"
+#   version = "1.0.0"
+#
+# [[constraint]]
+#   name = "github.com/user/project2"
+#   branch = "dev"
+#   source = "github.com/myfork/project2"
+#
+# [[override]]
+#  name = "github.com/x/y"
+#  version = "2.4.0"
+
+
+[[override]]
+  name = "github.com/hashicorp/go-plugin"
+  revision = "e2fbc6864d18d3c37b6cde4297ec9fca266d28f1"
+
+[[override]]
+  name = "google.golang.org/grpc"
+  revision = "b3ddf786825de56a4178401b7e174ee332173b66"
+
+[[override]]
+  name = "golang.org/x/sys"
+  revision = "43e60d72a8e2bd92ee98319ba9a384a0e9837c08"
+
+[[constraint]]
+  name = "github.com/heptio/ark"
+  version = "v0.8.1"
+
+[[override]]
+  version = "~8.1.x"
+  name = "github.com/Azure/go-autorest"
+
+[[override]]
+  name = "k8s.io/client-go"
+  version = "~6.0"

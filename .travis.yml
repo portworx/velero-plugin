@@ -1,0 +1,21 @@
+sudo: required
+dist: trusty
+language: go
+
+go:
+  - 1.9.x
+
+script:
+  - TAG=${TRAVIS_BRANCH} make check all-ci container &&
+    if [ "${TRAVIS_BRANCH}" == "master" ] && [ "${TRAVIS_PULL_REQUEST}" == "false" ]; then
+      docker login -u "${DOCKER_USER}" -p "${DOCKER_PASSWORD}";
+      make deploy;
+    fi
+notifications:
+  email:
+    on_success: always
+    on_failure: always
+
+
+
+
