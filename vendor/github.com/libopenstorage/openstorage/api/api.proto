@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "google/protobuf/timestamp.proto";
+import "google/api/annotations.proto";
 
 package openstorage.api;
 
@@ -22,8 +23,9 @@ enum Status {
   STATUS_NEEDS_REBOOT = 10;
   STATUS_STORAGE_REBALANCE = 11;
   STATUS_STORAGE_DRIVE_REPLACE = 12;
+  STATUS_NOT_IN_QUORUM_NO_STORAGE = 13;
   // Add statuses before MAX and update the number for MAX
-  STATUS_MAX = 13;
+  STATUS_MAX = 14;
 }
 
 enum DriverType {
@@ -159,11 +161,11 @@ enum AttachState {
     ATTACH_STATE_INTERNAL_SWITCH = 2;
 }
 
-enum OperationFlags {                                                           
+enum OperationFlags {
 	OP_FLAGS_UNKNOWN = 0;
-	OP_FLAGS_NONE = 1;                                                          
+	OP_FLAGS_NONE = 1;
 	// Perform a force_detach during detach operation
-	OP_FLAGS_DETACH_FORCE = 2;                                                  
+	OP_FLAGS_DETACH_FORCE = 2;
 }
 
 // StorageResource groups properties of a storage device.
@@ -193,6 +195,8 @@ message StorageResource {
   string rotation_speed = 11;
   // Timestamp of last time this device was scanned.
   google.protobuf.Timestamp last_scan = 12;
+  // True if dedicated for metadata.
+  bool metadata = 13;
 }
 
 // StoragePool groups different storage devices based on their CosType
@@ -275,7 +279,7 @@ message VolumeSpec {
   bool encrypted = 14;
   // Passphrase for an encrypted volume
   string passphrase = 15;
-  // SnapshotSchedule a well known string that specifies when snapshots should be taken. 
+  // SnapshotSchedule a well known string that specifies when snapshots should be taken.
   string snapshot_schedule = 16;
   // Scale allows autocreation of volumes.
   uint32 scale = 17;
@@ -291,18 +295,18 @@ message VolumeSpec {
   bool cascaded = 24;
   // Journal is true if data for the volume goes into the journal.
   bool journal = 25;
-  // Nfs is true if this volume can be accessed via nfs.
-  bool nfs = 26;
+  // Sharedv4 is true if this volume can be accessed via sharedv4.
+  bool sharedv4 = 26;
 }
 
-// ReplicaSet set of machine IDs (nodes) to which part of this volume is erasure 
+// ReplicaSet set of machine IDs (nodes) to which part of this volume is erasure
 // coded - for clustered storage arrays
 // swagger:model
 message ReplicaSet {
   repeated string nodes = 1;
 }
 
-// RuntimeStateMap is a list of name value mapping of driver specific runtime 
+// RuntimeStateMap is a list of name value mapping of driver specific runtime
 // information.
 // swagger:model
 message RuntimeStateMap {
@@ -351,11 +355,13 @@ message Volume {
   map<string, string> attach_info = 18;
   // ReplicatSets storage for this volumefor clustered storage arrays.
   repeated ReplicaSet replica_sets = 19;
-  // RuntimeState is a lst of name value mapping of driver specific runtime 
+  // RuntimeState is a lst of name value mapping of driver specific runtime
   // information.
   repeated RuntimeStateMap runtime_state = 20;
   // Error is the Last recorded error.
   string error = 21;
+  // VolumeConsumers are entities that consume this volume
+  repeated VolumeConsumer volume_consumers = 22;
 }
 
 // Stats is a structure that represents last collected stats for a volume
@@ -394,7 +400,7 @@ message Alert {
   // Message describing the Alert
   string message = 4;
   //Timestamp when Alert occured
-  google.protobuf.Timestamp timestamp = 5;	
+  google.protobuf.Timestamp timestamp = 5;
   // ResourceId where Alert occured
   string resource_id = 6;
   // Resource where Alert occured
@@ -413,6 +419,33 @@ message Alerts {
   repeated Alert alert = 1;
 }
 
+// ObjectstoreInfo is a structure that has current objectstore info
+// swagger:model
+message ObjectstoreInfo {
+    // UUID of objectstore                                                      
+    string uuid = 1;                                                               
+    // VolumeID of volume used by object store                                  
+    string volume_id = 2;                                                      
+    // Enable/Disable created objectstore                                       
+    bool enabled = 3;                                                                
+    // Status of objectstore running/failed                                     
+    string status = 4;                                                              
+    // Action being taken on this objectstore                                   
+    int64 action = 5;                                                                 
+    // AccessKey for login into objectstore                                     
+    string access_key = 6;                                                            
+    // SecretKey for login into objectstore                                     
+    string secret_key = 7;                                                           
+    // Endpoints for accessing objectstore                                      
+    repeated string endpoints = 8;                                                         
+    // CurrentEndpoint on which objectstore server is accessible                
+    string current_endPoint = 9;                                                     
+    // AccessPort is objectstore server port                                    
+    int64 access_port = 10;                                                             
+    // Region for this objectstore                                              
+    string region = 11;
+}
+
 // VolumeCreateRequest is a structure that has the locator, source and spec
 // to create a volume
 // swagger:model
@@ -426,15 +459,27 @@ message VolumeCreateRequest {
 }
 
 // VolumeResponse is a structure that wraps an error.
-// swagger:response
+// swagger:response volumeResponse
 message VolumeResponse {
+  // Error message
+  //
+  // in: body
+  // Required: true
   string error = 1;
 }
 
-// swagger:response
+// VolumeCreateResponse
+// swagger:response volumeCreateResponse
 message VolumeCreateResponse {
   // ID of the newly created volume
+  //
+  // in: body
+  // Required: true
   string id = 1;
+  // Volume Response
+  //
+  // in: body
+  // Required: true
   VolumeResponse volume_response = 2;
 }
 
@@ -465,9 +510,18 @@ message VolumeSetRequest {
   map<string, string> options = 4;
 }
 
-// swagger:response
+// VolumeSetResponse
+// swagger:response volumeSetResponse
 message VolumeSetResponse {
+  // Volume
+  //
+  // in: body
+  // Required: true
   Volume volume = 1;
+  //VolumeResponse
+  //
+  // in: body
+  // Required: true
   VolumeResponse volume_response = 2;
 }
 
@@ -480,16 +534,46 @@ message SnapCreateRequest {
   bool readonly = 3;
 }
 
-// swagger:response
+// SnapCreateRequest specifies a response that get's returned when creating a snapshot.
+// swagger:response snapCreateResponse
 message SnapCreateResponse {
+  // VolumeCreateResponse
+  //
+  // in: body
+  // Required: true
   VolumeCreateResponse volume_create_response = 1;
 }
 
+// VolumeInfo
 // swagger:model
 message VolumeInfo {
   string volume_id = 1;
   string path = 2;
   VolumeSpec storage = 3;
+}
+
+// VolumeConsumer identifies a consumer for a Volume. An example of a VolumeConsumer
+// would be a Pod in Kubernetes who has mounted the PersistentVolumeClaim for the
+// Volume
+// swagger: model
+message VolumeConsumer {
+  // Name is the name of the volume consumer
+  string name = 1;
+  // Namespace is the namespace of the volume consumer
+  string namespace = 2;
+  // Type is the type of the consumer. E.g a Kubernetes pod
+  string type = 3;
+  // NodeID is the identifier of the node on which the consumer is running. This
+  // identifier would be from the perspective of the container runtime or
+  // orchestrator under which the volume consumer resides. For example, NodeID
+  //  can be name of a minion in Kubernetes.
+  string node_id = 4;
+  // OwnerName is the name of the entity who owns this volume consumer
+  string owner_name = 5;
+  // OwnerType is the type of the entity who owns this volume consumer. The type would
+  // be from the perspective of the container runtime or the orchestrator under which
+  // the volume consumer resides. For e.g OwnerType can be a Deployment in Kubernetes.
+  string owner_type = 6;
 }
 
 // GraphDriverChanges represent a list of changes between the filesystem layers
@@ -502,18 +586,431 @@ message GraphDriverChanges {
   GraphDriverChangeType kind = 2;
 }
 
-// swagger:response
+// ClusterResponse specifies a response that gets returned when requesting the cluster
+// swagger:response clusterResponse
 message ClusterResponse {
+  // Error code
+  //
+  // in: body
   string error = 1;
 }
 
+// Active Request
 // swagger:model
 message ActiveRequest {
   map<int64, string> ReqestKV = 1;
 }
 
+// Active Requests
 // swagger:model
 message ActiveRequests {
   int64 RequestCount = 1;
   repeated ActiveRequest ActiveRequest = 2;
+}
+
+// GroupSnapCreateRequest specifies a request to create a snapshot of given group.
+// swagger:model
+message GroupSnapCreateRequest {
+  string id = 1;
+  map<string, string> Labels = 2;
+}
+
+// GroupSnapCreateRequest specifies a response that get's returned when creating a group snapshot.
+// swagger:response groupSnapCreateResponse
+message GroupSnapCreateResponse {
+  // Created snapshots
+  //
+  // in: body
+  // Required: true
+  map<string, SnapCreateResponse> snapshots = 1;
+  // Error message
+  //
+  // in: body
+  // Required: true
+  string error = 2;
+}
+
+// StorageNode describes the state of the node
+message StorageNode {
+  // Id of the node
+  string id = 1;
+  // Cpu usage of the node
+  double cpu = 2;
+  // Total memory of the node
+  uint64 mem_total = 3;
+  // Used memory of the node
+  uint64 mem_used = 4;
+  // Free memory of the node
+  uint64 mem_free = 5;
+  // Average load (percentage)
+  int64 avg_load = 6;
+  // Node status
+  Status status = 7;
+  // List of disks on the node
+  map<string, StorageResource> disks = 9;
+  // List of storage pools this node supports
+  repeated StoragePool pools = 10;
+  // Management IP
+  string mgmt_ip = 11;
+  // Data IP
+  string data_ip = 12;
+  // Hostname of the node
+  string hostname = 15;
+  // User defined labels for the node
+  map<string, string> node_labels = 16;
+}
+
+// StorageCluster represents the state of the cluster
+message StorageCluster {
+  // Status of the cluster
+  Status status = 1;
+  // Id of the cluster
+  string id = 2;
+  // NodeId is the id of the node servicing these requests
+  string node_id = 3;
+  // Nodes are a list of all the nodes on the cluster
+  repeated StorageNode nodes = 4;
+}
+
+service OpenStorageCluster {
+  // Enumerate lists all the nodes in the cluster.
+  rpc Enumerate(ClusterEnumerateRequest)
+    returns (ClusterEnumerateResponse) {
+      option(google.api.http) = {
+        post: "/v1/cluster/enumerate"
+        body: "*"
+      };
+    }
+
+  // Inspect the node given a UUID.
+  rpc Inspect(ClusterInspectRequest)
+    returns (ClusterInspectResponse) {
+      option(google.api.http) = {
+        post: "/v1/cluster/inspect"
+        body: "*"
+      };
+    }
+
+  // Get a list of alerts from the storage cluster
+  rpc AlertEnumerate(ClusterAlertEnumerateRequest)
+    returns (ClusterAlertEnumerateResponse) {
+      option(google.api.http) = {
+        post: "/v1/cluster/alert/enumerate"
+        body: "*"
+      };
+    }
+
+  // Clear the alert for a given resource
+  rpc AlertClear(ClusterAlertClearRequest)
+    returns (ClusterAlertClearResponse) {
+      option(google.api.http) = {
+        post: "/v1/cluster/alert/clear"
+        body: "*"
+      };
+    }
+
+  // Erases an alert for a given resource
+  rpc AlertErase(ClusterAlertEraseRequest)
+    returns (ClusterAlertEraseResponse) {
+      option(google.api.http) = {
+        post: "/v1/cluster/alert/erase"
+        body: "*"
+      };
+    }
+}
+
+service OpenStorageVolume {
+  // Creates a new volume
+  rpc Create(OpenStorageVolumeCreateRequest)
+    returns (OpenStorageVolumeCreateResponse) {
+      option(google.api.http) = {
+        post: "/v1/volume/create"
+        body: "*"
+      };
+    }
+
+  // CreateFromVolumeID creates a new volume cloned from an existing volume
+  rpc CreateFromVolumeID(VolumeCreateFromVolumeIDRequest)
+    returns (VolumeCreateFromVolumeIDResponse) {
+      option(google.api.http) = {
+        post: "/v1/volume/createfromid"
+        body: "*"
+      };
+    }
+
+  // Delete a volume
+  rpc Delete(VolumeDeleteRequest)
+    returns (VolumeDeleteResponse) {
+      option(google.api.http) = {
+        post: "/v1/volume/delete"
+        body: "*"
+      };
+    }
+
+  // Get information on a volume
+  rpc Inspect(VolumeInspectRequest)
+    returns (VolumeInspectResponse) {
+      option(google.api.http) = {
+        post: "/v1/volume/inspect"
+        body: "*"
+      };
+    }
+
+  // Get a list of volumes
+  rpc Enumerate(VolumeEnumerateRequest)
+    returns (VolumeEnumerateResponse) {
+      option(google.api.http) = {
+        post: "/v1/volume/enumerate"
+        body: "*"
+      };
+    }
+
+  // Create a snapshot of a volume. This creates an immutable (read-only),
+  // point-in-time snapshot of a volume.
+  rpc SnapshotCreate(VolumeSnapshotCreateRequest)
+    returns (VolumeSnapshotCreateResponse) {
+      option(google.api.http) = {
+        post: "/v1/volume/snapshot/create"
+        body: "*"
+      };
+    }
+
+  // Restores a volume to a specified snapshot
+  rpc SnapshotRestore(VolumeSnapshotRestoreRequest)
+    returns (VolumeSnapshotRestoreResponse) {
+      option(google.api.http) = {
+        post: "/v1/volume/snapshot/restore"
+        body: "*"
+      };
+    }
+
+  // List the number of snapshots for a specific volume
+  rpc SnapshotEnumerate(VolumeSnapshotEnumerateRequest)
+    returns (VolumeSnapshotEnumerateResponse) {
+      option(google.api.http) = {
+        post: "/v1/volume/snapshot/enumerate"
+        body: "*"
+      };
+    }
+
+  // Attach device to host                                                      
+  rpc Attach(VolumeAttachRequest)                                               
+    returns (VolumeAttachResponse) {                                            
+      option(google.api.http) = {                                               
+        post: "/v1/volume/attach"                                               
+        body: "*"                                                               
+      };                                                                        
+    }  
+
+  // Detaches the volume from the node.
+  rpc Detach(VolumeDetachRequest)
+    returns (VolumeDetachResponse) {
+      option(google.api.http) = {
+        post: "/v1/volume/detach"
+        body: "*"
+      };
+    }
+
+  // Attaches the volume to a node.
+  rpc Mount(VolumeMountRequest)
+    returns(VolumeMountResponse) {
+      option(google.api.http) = {
+        post: "/v1/volume/mount"
+        body: "*"
+      };
+    }
+
+  // Unmount volume at specified path                                           
+  rpc Unmount(VolumeUnmountRequest)                                             
+      returns (VolumeUnmountResponse) {                                         
+      option(google.api.http) = {                                               
+        post: "/v1/volume/unmount"                                              
+        body: "*"                                                               
+      };                                                                        
+    }
+}
+
+message VolumeMountRequest {
+  // Id of the volume
+  string volume_id = 1;
+  // Mount path for mounting the volume.
+  string mount_path = 2;
+  // Additional options
+  map<string, string> options = 3;  
+}
+
+message VolumeMountResponse {
+}
+
+message VolumeUnmountRequest {                                                  
+  // Id of volume                                                             
+  string volume_id = 1;                                                       
+  // MountPath for device                                                     
+  string mount_path = 2;                                                      
+  // Options to unmount device                                                
+  map<string, string> options = 3;                                            
+}
+     
+message VolumeUnmountResponse {                                                 
+}
+
+message VolumeAttachRequest {                                                   
+  // Id of volume                                                             
+  string volume_id = 1;                                                       
+  // Options for attaching volume, right now only passphrase options is supported
+  map<string, string>  options = 2;                                           
+}                                                                               
+                                                                                
+message VolumeAttachResponse {                                                  
+  // Device path where device is exported                                     
+  string device_path = 1;                                                     
+}
+          
+message VolumeDetachRequest {
+  // Id of the volume
+  string volume_id = 1;
+}
+
+message VolumeDetachResponse {
+}
+
+message OpenStorageVolumeCreateRequest {
+  // Unique name of the volume. This will be used for idempotency.
+  string name = 1;
+  // Volume specification
+  VolumeSpec spec = 2;
+}
+
+message OpenStorageVolumeCreateResponse {
+  // Id of new volume
+  string volume_id = 1;
+}
+
+message VolumeCreateFromVolumeIDRequest {
+  // Unique name of the volume. This will be used for idempotency.
+  string name = 1;
+  // Parent volume id, if specified will create a new volume as a clone of the parent.
+  string parent_id = 2;
+  // Volume specification
+  VolumeSpec spec = 3;
+}
+
+message VolumeCreateFromVolumeIDResponse {
+  // Id of new volume
+  string volume_id = 1;
+}
+
+message VolumeDeleteRequest {
+  // Id of volume to delete
+  string volume_id = 1;
+}
+
+message VolumeDeleteResponse {
+}
+
+message VolumeInspectRequest {
+  // Id of volume to inspect
+  string volume_id = 1;
+}
+
+message VolumeInspectResponse {
+  // Information about the volume
+  Volume volume = 1;
+}
+
+message VolumeEnumerateRequest {
+  // Volumes to match to this locator.
+  // If not provided, all volumes will be returned.
+  VolumeLocator locator = 1;
+}
+
+message VolumeEnumerateResponse {
+  // List of volumes matching label
+  repeated Volume volumes = 1;
+}
+
+message VolumeSnapshotCreateRequest{
+  // Id of volume to take the snapshot from
+  string volume_id = 1;
+  // Labels to apply to snapshot
+  map<string, string> labels = 2;
+}
+
+message VolumeSnapshotCreateResponse {
+  // Id of immutable snapshot
+  string snapshot_id = 1;
+}
+
+message VolumeSnapshotRestoreRequest {
+  // Id of volume
+  string volume_id = 1;
+  // Snapshot id to apply to `volume_id`
+  string snapshot_id = 2;
+}
+
+message VolumeSnapshotRestoreResponse {
+}
+
+message VolumeSnapshotEnumerateRequest {
+  // Id of volume
+  string volume_id = 1;
+  // Labels from snapshot
+  map<string, string> labels = 2;
+}
+
+message VolumeSnapshotEnumerateResponse {
+  // List of immutable snapshots
+  repeated Volume snapshots = 1;
+}
+
+message ClusterEnumerateRequest {
+}
+
+message ClusterEnumerateResponse {
+  // Cluster information
+	StorageCluster cluster = 1;
+}
+
+message ClusterInspectRequest {
+  // Id of node to inspect (required)
+	string node_id = 1;
+}
+
+message ClusterInspectResponse {
+  // Node information
+	StorageNode node = 1;
+}
+
+message ClusterAlertEnumerateRequest {
+  // Start time of alerts (required)
+  google.protobuf.Timestamp time_start = 1;
+  // End time of alerts (required) 
+  google.protobuf.Timestamp time_end = 2;
+  // Type of resource (required)
+	ResourceType resource = 3;
+}
+
+message ClusterAlertEnumerateResponse {
+  // Information on the alerts requested 
+	Alerts alerts = 1;
+}
+
+message ClusterAlertClearRequest {
+  // Type of resource (required)
+  ResourceType resource = 1;
+  // Id of alert as returned by ClusterEnumerateAlertResponse (required) 
+	int64 alert_id = 2;
+}
+
+message ClusterAlertClearResponse {
+}
+
+message ClusterAlertEraseRequest {
+  // Type of resource (required)
+  ResourceType resource = 1;
+  // Id of alert as returned by ClusterEnumerateAlertResponse (required) 
+	int64 alert_id = 2;
+}
+
+message ClusterAlertEraseResponse {
 }

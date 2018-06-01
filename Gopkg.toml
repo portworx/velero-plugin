@@ -27,11 +27,15 @@
 
 [[override]]
   name = "google.golang.org/grpc"
-  revision = "b3ddf786825de56a4178401b7e174ee332173b66"
+  version = "v1.12.0"
 
 [[override]]
   name = "golang.org/x/sys"
   revision = "43e60d72a8e2bd92ee98319ba9a384a0e9837c08"
+
+[[override]]
+  name = "github.com/libopenstorage/openstorage"
+  branch = "master"
 
 [[constraint]]
   name = "github.com/heptio/ark"
