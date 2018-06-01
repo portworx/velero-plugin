@@ -3,15 +3,12 @@ package snapshot
 import (
 	"fmt"
 
-	"github.com/heptio/ark/pkg/plugin"
-	"github.com/heptio/ark/pkg/util/collections"
 	"github.com/libopenstorage/openstorage/api"
 	"github.com/sirupsen/logrus"
-	"k8s.io/apimachinery/pkg/runtime"
 )
 
 type localSnapshotPlugin struct {
-	plugin.BlockStorePlugin
+	Plugin
 	log logrus.FieldLogger
 }
 
@@ -97,23 +94,4 @@ func (l *localSnapshotPlugin) DeleteSnapshot(snapshotID string) error {
 	}
 
 	return volDriver.Delete(snapshotID)
-}
-
-func (l *localSnapshotPlugin) GetVolumeID(pv runtime.Unstructured) (string, error) {
-	if !collections.Exists(pv.UnstructuredContent(), "spec.portworxVolume") {
-		return "", nil
-	}
-
-	return collections.GetString(pv.UnstructuredContent(), "spec.portworxVolume.volumeID")
-}
-
-func (l *localSnapshotPlugin) SetVolumeID(pv runtime.Unstructured, volumeID string) (runtime.Unstructured, error) {
-	pwx, err := collections.GetMap(pv.UnstructuredContent(), "spec.portworxVolume")
-	if err != nil {
-		return nil, err
-	}
-
-	pwx["volumeID"] = volumeID
-
-	return pv, nil
 }

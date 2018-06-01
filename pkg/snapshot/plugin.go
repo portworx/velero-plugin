@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/heptio/ark/pkg/cloudprovider"
+	"github.com/heptio/ark/pkg/util/collections"
 	volumeclient "github.com/libopenstorage/openstorage/api/client/volume"
 	"github.com/libopenstorage/openstorage/volume"
 	"github.com/portworx/sched-ops/k8s"
@@ -21,11 +22,10 @@ const (
 	namespace = "kube-system"
 
 	// Config parameters
-	configType = "Type"
-	configCred = "CredId"
+	configType = "type"
 
-	typeLocal = "Local"
-	typeCloud = "Cloud"
+	typeLocal = "local"
+	typeCloud = "cloud"
 )
 
 func getVolumeDriver() (volume.VolumeDriver, error) {
@@ -59,6 +59,8 @@ func (p *Plugin) Init(config map[string]string) error {
 	p.Log.Infof("Init'ing portworx plugin with config %v", config)
 	if snapType, ok := config[configType]; !ok || snapType == typeLocal {
 		p.plugin = &localSnapshotPlugin{log: p.Log}
+	} else if snapType == typeCloud {
+		p.plugin = &cloudSnapshotPlugin{log: p.Log}
 	} else {
 		err := fmt.Errorf("Snapshot type %v not supported", snapType)
 		p.Log.Errorf("%v", err)
@@ -95,10 +97,21 @@ func (p *Plugin) DeleteSnapshot(snapshotID string) error {
 
 // GetVolumeID Get the volume ID from the spec
 func (p *Plugin) GetVolumeID(pv runtime.Unstructured) (string, error) {
-	return p.plugin.GetVolumeID(pv)
+	if !collections.Exists(pv.UnstructuredContent(), "spec.portworxVolume") {
+		return "", nil
+	}
+
+	return collections.GetString(pv.UnstructuredContent(), "spec.portworxVolume.volumeID")
 }
 
 // SetVolumeID Set the volume ID in the spec
 func (p *Plugin) SetVolumeID(pv runtime.Unstructured, volumeID string) (runtime.Unstructured, error) {
-	return p.plugin.SetVolumeID(pv, volumeID)
+	pwx, err := collections.GetMap(pv.UnstructuredContent(), "spec.portworxVolume")
+	if err != nil {
+		return nil, err
+	}
+
+	pwx["volumeID"] = volumeID
+
+	return pv, nil
 }
