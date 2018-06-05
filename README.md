@@ -4,3 +4,5 @@
 
 # ark-plugin
 Portworx plugin for Heptio Ark
+
+Instructions to deploy and use can be found here: https://docs.portworx.com/scheduler/kubernetes/ark.html
