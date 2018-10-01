@@ -37,6 +37,7 @@ func (c *cloudSnapshotPlugin) CreateVolumeFromSnapshot(snapshotID, volumeType, v
 	// name.
 	enumRequest := &api.CloudBackupEnumerateRequest{}
 	enumRequest.CredentialUUID = c.credID
+	enumRequest.All = true
 	enumResponse, err := volDriver.CloudBackupEnumerate(enumRequest)
 	if err != nil {
 		return "", err
