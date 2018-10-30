@@ -80,22 +80,6 @@ func (c *cloudSnapshotPlugin) GetVolumeInfo(volumeID, volumeAZ string) (string, 
 	return "portworx-cloudsnapshot", nil, nil
 }
 
-func (c *cloudSnapshotPlugin) IsVolumeReady(volumeID, volumeAZ string) (ready bool, err error) {
-	volDriver, err := getVolumeDriver()
-	if err != nil {
-		return false, err
-	}
-
-	vols, err := volDriver.Inspect([]string{volumeID})
-	if err != nil {
-		return false, err
-	}
-	if len(vols) == 0 {
-		return false, fmt.Errorf("Volume %v not found", volumeID)
-	}
-	return true, nil
-}
-
 func (c *cloudSnapshotPlugin) CreateSnapshot(volumeID, volumeAZ string, tags map[string]string) (string, error) {
 	volDriver, err := getVolumeDriver()
 	if err != nil {
