@@ -22,33 +22,29 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	kuberrs "k8s.io/apimachinery/pkg/util/errors"
 
-	"github.com/heptio/ark/pkg/apis/ark/v1"
 	"github.com/heptio/ark/pkg/client"
-	"github.com/heptio/ark/pkg/cloudprovider"
 	"github.com/heptio/ark/pkg/discovery"
-	"github.com/heptio/ark/pkg/util/collections"
+	"github.com/heptio/ark/pkg/podexec"
+	"github.com/heptio/ark/pkg/restic"
 )
 
 type groupBackupperFactory interface {
 	newGroupBackupper(
 		log logrus.FieldLogger,
-		backup *v1.Backup,
-		namespaces, resources *collections.IncludesExcludes,
-		labelSelector string,
+		backupRequest *Request,
 		dynamicFactory client.DynamicFactory,
 		discoveryHelper discovery.Helper,
 		backedUpItems map[itemKey]struct{},
 		cohabitatingResources map[string]*cohabitatingResource,
-		actions []resolvedAction,
-		podCommandExecutor podCommandExecutor,
+		podCommandExecutor podexec.PodCommandExecutor,
 		tarWriter tarWriter,
-		resourceHooks []resourceHook,
-		snapshotService cloudprovider.SnapshotService,
+		resticBackupper restic.Backupper,
+		resticSnapshotTracker *pvcSnapshotTracker,
+		blockStoreGetter BlockStoreGetter,
 	) groupBackupper
 }
 
@@ -56,34 +52,30 @@ type defaultGroupBackupperFactory struct{}
 
 func (f *defaultGroupBackupperFactory) newGroupBackupper(
 	log logrus.FieldLogger,
-	backup *v1.Backup,
-	namespaces, resources *collections.IncludesExcludes,
-	labelSelector string,
+	backupRequest *Request,
 	dynamicFactory client.DynamicFactory,
 	discoveryHelper discovery.Helper,
 	backedUpItems map[itemKey]struct{},
 	cohabitatingResources map[string]*cohabitatingResource,
-	actions []resolvedAction,
-	podCommandExecutor podCommandExecutor,
+	podCommandExecutor podexec.PodCommandExecutor,
 	tarWriter tarWriter,
-	resourceHooks []resourceHook,
-	snapshotService cloudprovider.SnapshotService,
+	resticBackupper restic.Backupper,
+	resticSnapshotTracker *pvcSnapshotTracker,
+	blockStoreGetter BlockStoreGetter,
 ) groupBackupper {
 	return &defaultGroupBackupper{
-		log:                      log,
-		backup:                   backup,
-		namespaces:               namespaces,
-		resources:                resources,
-		labelSelector:            labelSelector,
-		dynamicFactory:           dynamicFactory,
-		discoveryHelper:          discoveryHelper,
-		backedUpItems:            backedUpItems,
-		cohabitatingResources:    cohabitatingResources,
-		actions:                  actions,
-		podCommandExecutor:       podCommandExecutor,
-		tarWriter:                tarWriter,
-		resourceHooks:            resourceHooks,
-		snapshotService:          snapshotService,
+		log:                   log,
+		backupRequest:         backupRequest,
+		dynamicFactory:        dynamicFactory,
+		discoveryHelper:       discoveryHelper,
+		backedUpItems:         backedUpItems,
+		cohabitatingResources: cohabitatingResources,
+		podCommandExecutor:    podCommandExecutor,
+		tarWriter:             tarWriter,
+		resticBackupper:       resticBackupper,
+		resticSnapshotTracker: resticSnapshotTracker,
+		blockStoreGetter:      blockStoreGetter,
+
 		resourceBackupperFactory: &defaultResourceBackupperFactory{},
 	}
 }
@@ -94,19 +86,17 @@ type groupBackupper interface {
 
 type defaultGroupBackupper struct {
 	log                      logrus.FieldLogger
-	backup                   *v1.Backup
-	namespaces, resources    *collections.IncludesExcludes
-	labelSelector            string
+	backupRequest            *Request
 	dynamicFactory           client.DynamicFactory
 	discoveryHelper          discovery.Helper
 	backedUpItems            map[itemKey]struct{}
 	cohabitatingResources    map[string]*cohabitatingResource
-	actions                  []resolvedAction
-	podCommandExecutor       podCommandExecutor
+	podCommandExecutor       podexec.PodCommandExecutor
 	tarWriter                tarWriter
-	resourceHooks            []resourceHook
-	snapshotService          cloudprovider.SnapshotService
+	resticBackupper          restic.Backupper
+	resticSnapshotTracker    *pvcSnapshotTracker
 	resourceBackupperFactory resourceBackupperFactory
+	blockStoreGetter         BlockStoreGetter
 }
 
 // backupGroup backs up a single API group.
@@ -116,19 +106,16 @@ func (gb *defaultGroupBackupper) backupGroup(group *metav1.APIResourceList) erro
 		log  = gb.log.WithField("group", group.GroupVersion)
 		rb   = gb.resourceBackupperFactory.newResourceBackupper(
 			log,
-			gb.backup,
-			gb.namespaces,
-			gb.resources,
-			gb.labelSelector,
+			gb.backupRequest,
 			gb.dynamicFactory,
 			gb.discoveryHelper,
 			gb.backedUpItems,
 			gb.cohabitatingResources,
-			gb.actions,
 			gb.podCommandExecutor,
 			gb.tarWriter,
-			gb.resourceHooks,
-			gb.snapshotService,
+			gb.resticBackupper,
+			gb.resticSnapshotTracker,
+			gb.blockStoreGetter,
 		)
 	)
 

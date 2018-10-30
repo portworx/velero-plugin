@@ -19,12 +19,11 @@ package backup
 import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/heptio/ark/pkg/apis/ark/v1"
+	"github.com/heptio/ark/pkg/kuberesource"
 	"github.com/heptio/ark/pkg/util/collections"
 )
 
@@ -34,11 +33,9 @@ type podAction struct {
 }
 
 // NewPodAction creates a new ItemAction for pods.
-func NewPodAction(log logrus.FieldLogger) ItemAction {
-	return &podAction{log: log}
+func NewPodAction(logger logrus.FieldLogger) ItemAction {
+	return &podAction{log: logger}
 }
-
-var pvcGroupResource = schema.GroupResource{Group: "", Resource: "persistentvolumeclaims"}
 
 // AppliesTo returns a ResourceSelector that applies only to pods.
 func (a *podAction) AppliesTo() (ResourceSelector, error) {
@@ -92,7 +89,7 @@ func (a *podAction) Execute(item runtime.Unstructured, backup *v1.Backup) (runti
 		a.log.Infof("Adding pvc %s to additionalItems", claimName)
 
 		additionalItems = append(additionalItems, ResourceIdentifier{
-			GroupResource: pvcGroupResource,
+			GroupResource: kuberesource.PersistentVolumeClaims,
 			Namespace:     metadata.GetNamespace(),
 			Name:          claimName,
 		})

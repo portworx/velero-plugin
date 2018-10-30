@@ -16,7 +16,9 @@ limitations under the License.
 
 package v1
 
-import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
 
 // BackupSpec defines the specification for an Ark backup.
 type BackupSpec struct {
@@ -44,7 +46,7 @@ type BackupSpec struct {
 	// SnapshotVolumes specifies whether to take cloud snapshots
 	// of any PV's referenced in the set of objects included
 	// in the Backup.
-	SnapshotVolumes *bool `json:"snapshotVolumes"`
+	SnapshotVolumes *bool `json:"snapshotVolumes,omitempty"`
 
 	// TTL is a time.Duration-parseable string describing how long
 	// the Backup should be retained for.
@@ -56,6 +58,12 @@ type BackupSpec struct {
 
 	// Hooks represent custom behaviors that should be executed at different phases of the backup.
 	Hooks BackupHooks `json:"hooks"`
+
+	// StorageLocation is a string containing the name of a BackupStorageLocation where the backup should be stored.
+	StorageLocation string `json:"storageLocation"`
+
+	// VolumeSnapshotLocations is a list containing names of VolumeSnapshotLocations associated with this backup.
+	VolumeSnapshotLocations []string `json:"volumeSnapshotLocations"`
 }
 
 // BackupHooks contains custom behaviors that should be executed at different phases of the backup.
@@ -80,7 +88,7 @@ type BackupResourceHookSpec struct {
 	// ExcludedResources specifies the resources to which this hook spec does not apply.
 	ExcludedResources []string `json:"excludedResources"`
 	// LabelSelector, if specified, filters the resources to which this hook spec applies.
-	LabelSelector *metav1.LabelSelector `json:"labelSelector"`
+	LabelSelector *metav1.LabelSelector `json:"labelSelector,omitempty"`
 	// Hooks is a list of BackupResourceHooks to execute. DEPRECATED. Replaced by PreHooks.
 	Hooks []BackupResourceHook `json:"hooks"`
 	// PreHooks is a list of BackupResourceHooks to execute prior to storing the item in the backup.
@@ -165,11 +173,36 @@ type BackupStatus struct {
 	// VolumeBackups is a map of PersistentVolume names to
 	// information about the backed-up volume in the cloud
 	// provider API.
-	VolumeBackups map[string]*VolumeBackupInfo `json:"volumeBackups"`
+	//
+	// Deprecated: this field is considered read-only as of v0.10
+	// and will be removed in a subsequent release. The information
+	// previously contained here is now stored in a file in backup
+	// storage.
+	VolumeBackups map[string]*VolumeBackupInfo `json:"volumeBackups,omitempty"`
 
 	// ValidationErrors is a slice of all validation errors (if
 	// applicable).
 	ValidationErrors []string `json:"validationErrors"`
+
+	// StartTimestamp records the time a backup was started.
+	// Separate from CreationTimestamp, since that value changes
+	// on restores.
+	// The server's time is used for StartTimestamps
+	StartTimestamp metav1.Time `json:"startTimestamp"`
+
+	// CompletionTimestamp records the time a backup was completed.
+	// Completion time is recorded even on failed backups.
+	// Completion time is recorded before uploading the backup object.
+	// The server's time is used for CompletionTimestamps
+	CompletionTimestamp metav1.Time `json:"completionTimestamp"`
+
+	// VolumeSnapshotsAttempted is the total number of attempted
+	// volume snapshots for this backup.
+	VolumeSnapshotsAttempted int `json:"volumeSnapshotsAttempted"`
+
+	// VolumeSnapshotsCompleted is the total number of successfully
+	// completed volume snapshots for this backup.
+	VolumeSnapshotsCompleted int `json:"volumeSnapshotsCompleted"`
 }
 
 // VolumeBackupInfo captures the required information about
