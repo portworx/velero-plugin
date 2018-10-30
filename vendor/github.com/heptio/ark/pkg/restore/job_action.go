@@ -18,7 +18,6 @@ package restore
 
 import (
 	"github.com/sirupsen/logrus"
-
 	"k8s.io/apimachinery/pkg/runtime"
 
 	api "github.com/heptio/ark/pkg/apis/ark/v1"
@@ -30,9 +29,7 @@ type jobAction struct {
 }
 
 func NewJobAction(logger logrus.FieldLogger) ItemAction {
-	return &jobAction{
-		logger: logger,
-	}
+	return &jobAction{logger: logger}
 }
 
 func (a *jobAction) AppliesTo() (ResourceSelector, error) {

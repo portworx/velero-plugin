@@ -17,11 +17,6 @@ limitations under the License.
 package backup
 
 import (
-	api "github.com/heptio/ark/pkg/apis/ark/v1"
-	"github.com/heptio/ark/pkg/client"
-	"github.com/heptio/ark/pkg/cloudprovider"
-	"github.com/heptio/ark/pkg/discovery"
-	"github.com/heptio/ark/pkg/util/collections"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -30,24 +25,28 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	kuberrs "k8s.io/apimachinery/pkg/util/errors"
+
+	"github.com/heptio/ark/pkg/client"
+	"github.com/heptio/ark/pkg/discovery"
+	"github.com/heptio/ark/pkg/kuberesource"
+	"github.com/heptio/ark/pkg/podexec"
+	"github.com/heptio/ark/pkg/restic"
+	"github.com/heptio/ark/pkg/util/collections"
 )
 
 type resourceBackupperFactory interface {
 	newResourceBackupper(
 		log logrus.FieldLogger,
-		backup *api.Backup,
-		namespaces *collections.IncludesExcludes,
-		resources *collections.IncludesExcludes,
-		labelSelector string,
+		backupRequest *Request,
 		dynamicFactory client.DynamicFactory,
 		discoveryHelper discovery.Helper,
 		backedUpItems map[itemKey]struct{},
 		cohabitatingResources map[string]*cohabitatingResource,
-		actions []resolvedAction,
-		podCommandExecutor podCommandExecutor,
+		podCommandExecutor podexec.PodCommandExecutor,
 		tarWriter tarWriter,
-		resourceHooks []resourceHook,
-		snapshotService cloudprovider.SnapshotService,
+		resticBackupper restic.Backupper,
+		resticSnapshotTracker *pvcSnapshotTracker,
+		blockStoreGetter BlockStoreGetter,
 	) resourceBackupper
 }
 
@@ -55,36 +54,31 @@ type defaultResourceBackupperFactory struct{}
 
 func (f *defaultResourceBackupperFactory) newResourceBackupper(
 	log logrus.FieldLogger,
-	backup *api.Backup,
-	namespaces *collections.IncludesExcludes,
-	resources *collections.IncludesExcludes,
-	labelSelector string,
+	backupRequest *Request,
 	dynamicFactory client.DynamicFactory,
 	discoveryHelper discovery.Helper,
 	backedUpItems map[itemKey]struct{},
 	cohabitatingResources map[string]*cohabitatingResource,
-	actions []resolvedAction,
-	podCommandExecutor podCommandExecutor,
+	podCommandExecutor podexec.PodCommandExecutor,
 	tarWriter tarWriter,
-	resourceHooks []resourceHook,
-	snapshotService cloudprovider.SnapshotService,
+	resticBackupper restic.Backupper,
+	resticSnapshotTracker *pvcSnapshotTracker,
+	blockStoreGetter BlockStoreGetter,
 ) resourceBackupper {
 	return &defaultResourceBackupper{
 		log:                   log,
-		backup:                backup,
-		namespaces:            namespaces,
-		resources:             resources,
-		labelSelector:         labelSelector,
+		backupRequest:         backupRequest,
 		dynamicFactory:        dynamicFactory,
 		discoveryHelper:       discoveryHelper,
 		backedUpItems:         backedUpItems,
-		actions:               actions,
 		cohabitatingResources: cohabitatingResources,
 		podCommandExecutor:    podCommandExecutor,
 		tarWriter:             tarWriter,
-		resourceHooks:         resourceHooks,
-		snapshotService:       snapshotService,
-		itemBackupperFactory:  &defaultItemBackupperFactory{},
+		resticBackupper:       resticBackupper,
+		resticSnapshotTracker: resticSnapshotTracker,
+		blockStoreGetter:      blockStoreGetter,
+
+		itemBackupperFactory: &defaultItemBackupperFactory{},
 	}
 }
 
@@ -94,20 +88,17 @@ type resourceBackupper interface {
 
 type defaultResourceBackupper struct {
 	log                   logrus.FieldLogger
-	backup                *api.Backup
-	namespaces            *collections.IncludesExcludes
-	resources             *collections.IncludesExcludes
-	labelSelector         string
+	backupRequest         *Request
 	dynamicFactory        client.DynamicFactory
 	discoveryHelper       discovery.Helper
 	backedUpItems         map[itemKey]struct{}
 	cohabitatingResources map[string]*cohabitatingResource
-	actions               []resolvedAction
-	podCommandExecutor    podCommandExecutor
+	podCommandExecutor    podexec.PodCommandExecutor
 	tarWriter             tarWriter
-	resourceHooks         []resourceHook
-	snapshotService       cloudprovider.SnapshotService
+	resticBackupper       restic.Backupper
+	resticSnapshotTracker *pvcSnapshotTracker
 	itemBackupperFactory  itemBackupperFactory
+	blockStoreGetter      BlockStoreGetter
 }
 
 // backupResource backs up all the objects for a given group-version-resource.
@@ -132,9 +123,9 @@ func (rb *defaultResourceBackupper) backupResource(
 
 	// If the resource we are backing up is NOT namespaces, and it is cluster-scoped, check to see if
 	// we should include it based on the IncludeClusterResources setting.
-	if gr != namespacesGroupResource && clusterScoped {
-		if rb.backup.Spec.IncludeClusterResources == nil {
-			if !rb.namespaces.IncludeEverything() {
+	if gr != kuberesource.Namespaces && clusterScoped {
+		if rb.backupRequest.Spec.IncludeClusterResources == nil {
+			if !rb.backupRequest.NamespaceIncludesExcludes.IncludeEverything() {
 				// when IncludeClusterResources == nil (auto), only directly
 				// back up cluster-scoped resources if we're doing a full-cluster
 				// (all namespaces) backup. Note that in the case of a subset of
@@ -145,13 +136,13 @@ func (rb *defaultResourceBackupper) backupResource(
 				log.Info("Skipping resource because it's cluster-scoped and only specific namespaces are included in the backup")
 				return nil
 			}
-		} else if !*rb.backup.Spec.IncludeClusterResources {
+		} else if !*rb.backupRequest.Spec.IncludeClusterResources {
 			log.Info("Skipping resource because it's cluster-scoped")
 			return nil
 		}
 	}
 
-	if !rb.resources.ShouldInclude(grString) {
+	if !rb.backupRequest.ResourceIncludesExcludes.ShouldInclude(grString) {
 		log.Infof("Resource is excluded")
 		return nil
 	}
@@ -170,31 +161,29 @@ func (rb *defaultResourceBackupper) backupResource(
 	}
 
 	itemBackupper := rb.itemBackupperFactory.newItemBackupper(
-		rb.backup,
-		rb.namespaces,
-		rb.resources,
+		rb.backupRequest,
 		rb.backedUpItems,
-		rb.actions,
 		rb.podCommandExecutor,
 		rb.tarWriter,
-		rb.resourceHooks,
 		rb.dynamicFactory,
 		rb.discoveryHelper,
-		rb.snapshotService,
+		rb.resticBackupper,
+		rb.resticSnapshotTracker,
+		rb.blockStoreGetter,
 	)
 
-	namespacesToList := getNamespacesToList(rb.namespaces)
+	namespacesToList := getNamespacesToList(rb.backupRequest.NamespaceIncludesExcludes)
 
 	// Check if we're backing up namespaces, and only certain ones
-	if gr == namespacesGroupResource && namespacesToList[0] != "" {
+	if gr == kuberesource.Namespaces && namespacesToList[0] != "" {
 		resourceClient, err := rb.dynamicFactory.ClientForGroupVersionResource(gv, resource, "")
 		if err != nil {
 			return err
 		}
 
 		var labelSelector labels.Selector
-		if rb.backup.Spec.LabelSelector != nil {
-			labelSelector, err = metav1.LabelSelectorAsSelector(rb.backup.Spec.LabelSelector)
+		if rb.backupRequest.Spec.LabelSelector != nil {
+			labelSelector, err = metav1.LabelSelectorAsSelector(rb.backupRequest.Spec.LabelSelector)
 			if err != nil {
 				// This should never happen...
 				return errors.Wrap(err, "invalid label selector")
@@ -234,8 +223,13 @@ func (rb *defaultResourceBackupper) backupResource(
 			return err
 		}
 
+		var labelSelector string
+		if selector := rb.backupRequest.Spec.LabelSelector; selector != nil {
+			labelSelector = metav1.FormatLabelSelector(selector)
+		}
+
 		log.WithField("namespace", namespace).Info("Listing items")
-		unstructuredList, err := resourceClient.List(metav1.ListOptions{LabelSelector: rb.labelSelector})
+		unstructuredList, err := resourceClient.List(metav1.ListOptions{LabelSelector: labelSelector})
 		if err != nil {
 			return errors.WithStack(err)
 		}
@@ -260,7 +254,7 @@ func (rb *defaultResourceBackupper) backupResource(
 				continue
 			}
 
-			if gr == namespacesGroupResource && !rb.namespaces.ShouldInclude(metadata.GetName()) {
+			if gr == kuberesource.Namespaces && !rb.backupRequest.NamespaceIncludesExcludes.ShouldInclude(metadata.GetName()) {
 				log.WithField("name", metadata.GetName()).Info("skipping namespace because it is excluded")
 				continue
 			}

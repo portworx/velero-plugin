@@ -17,13 +17,13 @@ limitations under the License.
 package backup
 
 import (
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-
+	corev1api "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/heptio/ark/pkg/apis/ark/v1"
-	"github.com/heptio/ark/pkg/util/collections"
+	"github.com/heptio/ark/pkg/kuberesource"
 )
 
 // backupPVAction inspects a PersistentVolumeClaim for the PersistentVolume
@@ -32,11 +32,9 @@ type backupPVAction struct {
 	log logrus.FieldLogger
 }
 
-func NewBackupPVAction(log logrus.FieldLogger) ItemAction {
-	return &backupPVAction{log: log}
+func NewBackupPVAction(logger logrus.FieldLogger) ItemAction {
+	return &backupPVAction{log: logger}
 }
-
-var pvGroupResource = schema.GroupResource{Group: "", Resource: "persistentvolumes"}
 
 func (a *backupPVAction) AppliesTo() (ResourceSelector, error) {
 	return ResourceSelector{
@@ -49,23 +47,18 @@ func (a *backupPVAction) AppliesTo() (ResourceSelector, error) {
 func (a *backupPVAction) Execute(item runtime.Unstructured, backup *v1.Backup) (runtime.Unstructured, []ResourceIdentifier, error) {
 	a.log.Info("Executing backupPVAction")
 
-	var additionalItems []ResourceIdentifier
-
-	pvc := item.UnstructuredContent()
-
-	volumeName, err := collections.GetString(pvc, "spec.volumeName")
-	// if there's no volume name, it's not an error, since it's possible
-	// for the PVC not be bound; don't return an additional PV item to
-	// back up.
-	if err != nil || volumeName == "" {
-		a.log.Info("No spec.volumeName found for PersistentVolumeClaim")
-		return nil, nil, nil
+	var pvc corev1api.PersistentVolumeClaim
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(item.UnstructuredContent(), &pvc); err != nil {
+		return nil, nil, errors.Wrap(err, "unable to convert unstructured item to persistent volume claim")
 	}
 
-	additionalItems = append(additionalItems, ResourceIdentifier{
-		GroupResource: pvGroupResource,
-		Name:          volumeName,
-	})
+	if pvc.Status.Phase != corev1api.ClaimBound || pvc.Spec.VolumeName == "" {
+		return item, nil, nil
+	}
 
-	return item, additionalItems, nil
+	pv := ResourceIdentifier{
+		GroupResource: kuberesource.PersistentVolumes,
+		Name:          pvc.Spec.VolumeName,
+	}
+	return item, []ResourceIdentifier{pv}, nil
 }
