@@ -80,11 +80,6 @@ func (p *Plugin) GetVolumeInfo(volumeID, volumeAZ string) (string, *int64, error
 	return p.plugin.GetVolumeInfo(volumeID, volumeAZ)
 }
 
-// IsVolumeReady Check if the volume is ready
-func (p *Plugin) IsVolumeReady(volumeID, volumeAZ string) (ready bool, err error) {
-	return p.plugin.IsVolumeReady(volumeID, volumeAZ)
-}
-
 // CreateSnapshot Create a snapshot
 func (p *Plugin) CreateSnapshot(volumeID, volumeAZ string, tags map[string]string) (string, error) {
 	return p.plugin.CreateSnapshot(volumeID, volumeAZ, tags)
