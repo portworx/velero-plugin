@@ -39,7 +39,7 @@
 
 [[override]]
   name = "github.com/libopenstorage/openstorage"
-  branch = "master"
+  branch = "release-4.0"
 
 [[constraint]]
   name = "github.com/heptio/ark"

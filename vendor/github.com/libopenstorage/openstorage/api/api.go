@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang/protobuf/ptypes"
+
 	"github.com/mohae/deepcopy"
 )
 
@@ -27,6 +29,7 @@ const (
 	SpecScale                = "scale"
 	SpecFilesystem           = "fs"
 	SpecBlockSize            = "block_size"
+	SpecQueueDepth           = "queue_depth"
 	SpecHaLevel              = "repl"
 	SpecPriority             = "io_priority"
 	SpecSnapshotInterval     = "snap_interval"
@@ -44,6 +47,15 @@ const (
 	SpecLabels               = "labels"
 	SpecPriorityAlias        = "priority_io"
 	SpecIoProfile            = "io_profile"
+	SpecAsyncIo              = "async_io"
+	SpecEarlyAck             = "early_ack"
+	// SpecBestEffortLocationProvisioning default is false. If set provisioning request will succeed
+	// even if specified data location parameters could not be satisfied.
+	SpecBestEffortLocationProvisioning = "best_effort_location_provisioning"
+	// SpecForceUnsuppportedFsType is of type boolean and if true it sets
+	// the VolumeSpec.force_unsupported_fs_type. When set to true it asks
+	// the driver to use an unsupported value of VolumeSpec.format if possible
+	SpecForceUnsupportedFsType = "force_unsupported_fs_type"
 )
 
 // OptionKey specifies a set of recognized query params.
@@ -66,6 +78,8 @@ const (
 	OptQuiesceID = "QuiesceID"
 	// OptCredUUID is the UUID of the credential
 	OptCredUUID = "CredUUID"
+	// OptCredName indicates unique name of credential
+	OptCredName = "CredName"
 	// OptCredType  indicates type of credential
 	OptCredType = "CredType"
 	// OptCredEncrKey is the key used to encrypt data
@@ -80,6 +94,8 @@ const (
 	OptCredAccessKey = "CredAccessKey"
 	// OptCredSecretKey for s3
 	OptCredSecretKey = "CredSecretKey"
+	// OptCredBucket is the optional bucket name
+	OptCredBucket = "CredBucket"
 	// OptCredGoogleProjectID projectID for google cloud
 	OptCredGoogleProjectID = "CredProjectID"
 	// OptCredGoogleJsonKey for google cloud
@@ -99,15 +115,23 @@ const (
 	OptBkupOpState = "OpState"
 	// OptBackupSchedUUID is the UUID of the backup-schedule
 	OptBackupSchedUUID = "BkupSchedUUID"
+	// OptVolumeSubFolder query parameter used to catalog a particular path inside a volume
+	OptCatalogSubFolder = "subfolder"
+	// OptCatalogMaxDepth query parameter used to limit the depth we return
+	OptCatalogMaxDepth = "depth"
 )
 
 // Api clientserver Constants
 const (
-	OsdVolumePath   = "osd-volumes"
-	OsdSnapshotPath = "osd-snapshot"
-	OsdCredsPath    = "osd-creds"
-	OsdBackupPath   = "osd-backup"
-	TimeLayout      = "Jan 2 15:04:05 UTC 2006"
+	OsdVolumePath        = "osd-volumes"
+	OsdSnapshotPath      = "osd-snapshot"
+	OsdCredsPath         = "osd-creds"
+	OsdBackupPath        = "osd-backup"
+	OsdMigratePath       = "osd-migrate"
+	OsdMigrateStartPath  = OsdMigratePath + "/start"
+	OsdMigrateCancelPath = OsdMigratePath + "/cancel"
+	OsdMigrateStatusPath = OsdMigratePath + "/status"
+	TimeLayout           = "Jan 2 15:04:05 UTC 2006"
 )
 
 const (
@@ -123,6 +147,9 @@ const (
 type Node struct {
 	// Id of the node.
 	Id string
+	// SchedulerNodeName is name of the node in scheduler context. It can be
+	// empty if unable to get the name from the scheduler.
+	SchedulerNodeName string
 	// Cpu usage of the node.
 	Cpu float64 // percentage.
 	// Total Memory of the node
@@ -239,6 +266,30 @@ type CloudBackupCreateRequest struct {
 	CredentialUUID string
 	// Full indicates if full backup is desired even though incremental is possible
 	Full bool
+	// Name is optional unique id to be used for this backup
+	// If not specified backup creates this by default
+	Name string
+	// Labels are list of key value pairs to tag the cloud backup. These labels
+	// are stored in the metadata associated with the backup.
+	Labels map[string]string
+}
+
+type CloudBackupCreateResponse struct {
+	// Name of the task performing this backup
+	Name string
+}
+
+type CloudBackupGroupCreateRequest struct {
+	// GroupID indicates backup request for a volumegroup with this group id
+	GroupID string
+	// Labels indicates backup request for a volume group with these labels
+	// If both GroupID and Labels are specified, volumes matching both
+	// criteria are backed up to cloud
+	Labels map[string]string
+	// CredentialUUID is cloud credential to be used for backup
+	CredentialUUID string
+	// Full indicates if full backup is desired even though incremental is possible
+	Full bool
 }
 
 type CloudBackupRestoreRequest struct {
@@ -252,11 +303,16 @@ type CloudBackupRestoreRequest struct {
 	// NodeID is the optional NodeID for provisioning restore
 	// volume (ResoreVolumeName should not be specified)
 	NodeID string
+	// Name is optional unique id to be used for this restore op
+	// restore creates this by default
+	Name string
 }
 
 type CloudBackupRestoreResponse struct {
 	// RestoreVolumeID is the volumeID to which the backup is being restored
 	RestoreVolumeID string
+	// Name of the task performing this restore
+	Name string
 }
 
 type CloudBackupGenericRequest struct {
@@ -314,6 +370,9 @@ type CloudBackupStatusRequest struct {
 	// Local indicates if only those backups/restores that are
 	// active on current node must be returned
 	Local bool
+	// Name of the backup/restore task. If this is specified, SrcVolumeID is
+	// ignored
+	Name string
 }
 
 type CloudBackupOpType string
@@ -332,7 +391,14 @@ const (
 	CloudBackupStatusPaused     = CloudBackupStatusType("Paused")
 	CloudBackupStatusStopped    = CloudBackupStatusType("Stopped")
 	CloudBackupStatusActive     = CloudBackupStatusType("Active")
+	CloudBackupStatusQueued     = CloudBackupStatusType("Queued")
 	CloudBackupStatusFailed     = CloudBackupStatusType("Failed")
+)
+
+const (
+	CloudBackupRequestedStatePause  = "pause"
+	CloudBackupRequestedStateResume = "resume"
+	CloudBackupRequestedStateStop   = "stop"
 )
 
 type CloudBackupStatus struct {
@@ -342,18 +408,30 @@ type CloudBackupStatus struct {
 	OpType CloudBackupOpType
 	// State indicates if the op is currently active/done/failed
 	Status CloudBackupStatusType
-	// BytesDone indicates total Bytes uploaded/downloaded
+	// BytesDone indicates Bytes uploaded/downloaded so far
 	BytesDone uint64
+	// BytesTotal is the total number of bytes being transferred
+	BytesTotal uint64
+	// EtaSeconds estimated time in seconds for backup/restore completion
+	EtaSeconds int64
 	// StartTime indicates Op's start time
 	StartTime time.Time
 	// CompletedTime indicates Op's completed time
 	CompletedTime time.Time
 	// NodeID is the ID of the node where this Op is active
 	NodeID string
+	// SrcVolumeID is either the volume being backed-up or target volume to
+	// which a cloud backup is being restored
+	SrcVolumeID string
+	// Info currently indicates only failure cause in case of failed backup/restore
+	Info []string
+	// CredentialUUID used for this backup/restore op
+	CredentialUUID string
 }
 
 type CloudBackupStatusResponse struct {
 	// statuses is list of currently active/failed/done backup/restores
+	// map key is the id of the task
 	Statuses map[string]CloudBackupStatus
 }
 
@@ -390,9 +468,9 @@ type CloudBackupHistoryResponse struct {
 }
 
 type CloudBackupStateChangeRequest struct {
-	// SrcVolumeID is volume ID on which backup/restore
-	// state change is being requested
-	SrcVolumeID string
+	// Name of the backup/restore task for which state change
+	// is being requested
+	Name string
 	// RequestedState is desired state of the op
 	// can be pause/resume/stop
 	RequestedState string
@@ -408,10 +486,34 @@ type CloudBackupScheduleInfo struct {
 	// MaxBackups are the maximum number of backups retained
 	// in cloud.Older backups are deleted
 	MaxBackups uint
+	// GroupID indicates the group of volumes for this cloudbackup schedule
+	GroupID string
+	// Labels indicates a volume group for this cloudsnap schedule
+	Labels map[string]string
+	// Full indicates if scheduled backups must be full always
+	Full bool
 }
 
 type CloudBackupSchedCreateRequest struct {
 	CloudBackupScheduleInfo
+}
+
+type CloudBackupGroupSchedCreateRequest struct {
+	// GroupID indicates the group of volumes for which cloudbackup schedule is
+	// being created
+	GroupID string
+	// Labels indicates a volume group for which this group cloudsnap schedule is
+	// being created. If this is provided GroupId is not needed and vice-versa.
+	Labels map[string]string
+	// CredentialUUID is cloud credential to be used with this schedule
+	CredentialUUID string
+	// Schedule is the frequency of backup
+	Schedule string
+	// MaxBackups are the maximum number of backups retained
+	// in cloud.Older backups are deleted
+	MaxBackups uint
+	// Full indicates if scheduled backups must be full always
+	Full bool
 }
 
 type CloudBackupSchedCreateResponse struct {
@@ -429,6 +531,14 @@ type CloudBackupSchedEnumerateResponse struct {
 	Schedules map[string]CloudBackupScheduleInfo
 }
 
+// Defines the response for CapacityUsage request
+type CapacityUsageResponse struct {
+	CapacityUsageInfo *CapacityUsageInfo
+	// Describes the err if all of the usage details could not be obtained
+	Error error
+}
+
+//
 // DriverTypeSimpleValueOf returns the string format of DriverType
 func DriverTypeSimpleValueOf(s string) (DriverType, error) {
 	obj, err := simpleValueOf("driver_type", DriverType_value, s)
@@ -652,16 +762,17 @@ func (v Volume) DisplayId() string {
 // ToStorageNode converts a Node structure to an exported gRPC StorageNode struct
 func (s *Node) ToStorageNode() *StorageNode {
 	node := &StorageNode{
-		Id:       s.Id,
-		Cpu:      s.Cpu,
-		MemTotal: s.MemTotal,
-		MemUsed:  s.MemUsed,
-		MemFree:  s.MemFree,
-		AvgLoad:  int64(s.Avgload),
-		Status:   s.Status,
-		MgmtIp:   s.MgmtIp,
-		DataIp:   s.DataIp,
-		Hostname: s.Hostname,
+		Id:                s.Id,
+		SchedulerNodeName: s.SchedulerNodeName,
+		Cpu:               s.Cpu,
+		MemTotal:          s.MemTotal,
+		MemUsed:           s.MemUsed,
+		MemFree:           s.MemFree,
+		AvgLoad:           int64(s.Avgload),
+		Status:            s.Status,
+		MgmtIp:            s.MgmtIp,
+		DataIp:            s.DataIp,
+		Hostname:          s.Hostname,
 	}
 
 	node.Disks = make(map[string]*StorageResource)
@@ -686,14 +797,133 @@ func (s *Node) ToStorageNode() *StorageNode {
 func (c *Cluster) ToStorageCluster() *StorageCluster {
 	cluster := &StorageCluster{
 		Status: c.Status,
-		Id:     c.Id,
-		NodeId: c.NodeId,
-	}
 
-	cluster.Nodes = make([]*StorageNode, len(c.Nodes))
-	for i, v := range c.Nodes {
-		cluster.Nodes[i] = v.ToStorageNode()
+		// Due to history, the cluster ID is normally the name of the cluster, not the
+		// unique identifier
+		Name: c.Id,
 	}
 
 	return cluster
+}
+
+func CloudBackupStatusTypeToSdkCloudBackupStatusType(
+	t CloudBackupStatusType,
+) SdkCloudBackupStatusType {
+	switch t {
+	case CloudBackupStatusNotStarted:
+		return SdkCloudBackupStatusType_SdkCloudBackupStatusTypeNotStarted
+	case CloudBackupStatusDone:
+		return SdkCloudBackupStatusType_SdkCloudBackupStatusTypeDone
+	case CloudBackupStatusAborted:
+		return SdkCloudBackupStatusType_SdkCloudBackupStatusTypeAborted
+	case CloudBackupStatusPaused:
+		return SdkCloudBackupStatusType_SdkCloudBackupStatusTypePaused
+	case CloudBackupStatusStopped:
+		return SdkCloudBackupStatusType_SdkCloudBackupStatusTypeStopped
+	case CloudBackupStatusActive:
+		return SdkCloudBackupStatusType_SdkCloudBackupStatusTypeActive
+	case CloudBackupStatusFailed:
+		return SdkCloudBackupStatusType_SdkCloudBackupStatusTypeFailed
+	default:
+		return SdkCloudBackupStatusType_SdkCloudBackupStatusTypeUnknown
+	}
+}
+
+func StringToSdkCloudBackupStatusType(s string) SdkCloudBackupStatusType {
+	return CloudBackupStatusTypeToSdkCloudBackupStatusType(CloudBackupStatusType(s))
+}
+
+func (b *CloudBackupInfo) ToSdkCloudBackupInfo() *SdkCloudBackupInfo {
+	info := &SdkCloudBackupInfo{
+		Id:            b.ID,
+		SrcVolumeId:   b.SrcVolumeID,
+		SrcVolumeName: b.SrcVolumeName,
+		Metadata:      b.Metadata,
+	}
+
+	info.Timestamp, _ = ptypes.TimestampProto(b.Timestamp)
+	info.Status = StringToSdkCloudBackupStatusType(b.Status)
+
+	return info
+}
+
+func (r *CloudBackupEnumerateResponse) ToSdkCloudBackupEnumerateWithFiltersResponse() *SdkCloudBackupEnumerateWithFiltersResponse {
+	resp := &SdkCloudBackupEnumerateWithFiltersResponse{
+		Backups: make([]*SdkCloudBackupInfo, len(r.Backups)),
+	}
+
+	for i, v := range r.Backups {
+		resp.Backups[i] = v.ToSdkCloudBackupInfo()
+	}
+
+	return resp
+}
+
+func CloudBackupOpTypeToSdkCloudBackupOpType(t CloudBackupOpType) SdkCloudBackupOpType {
+	switch t {
+	case CloudBackupOp:
+		return SdkCloudBackupOpType_SdkCloudBackupOpTypeBackupOp
+	case CloudRestoreOp:
+		return SdkCloudBackupOpType_SdkCloudBackupOpTypeRestoreOp
+	default:
+		return SdkCloudBackupOpType_SdkCloudBackupOpTypeUnknown
+	}
+}
+
+func StringToSdkCloudBackupOpType(s string) SdkCloudBackupOpType {
+	return CloudBackupOpTypeToSdkCloudBackupOpType(CloudBackupOpType(s))
+}
+
+func (s CloudBackupStatus) ToSdkCloudBackupStatus() *SdkCloudBackupStatus {
+	status := &SdkCloudBackupStatus{
+		BackupId:     s.ID,
+		Optype:       CloudBackupOpTypeToSdkCloudBackupOpType(s.OpType),
+		Status:       CloudBackupStatusTypeToSdkCloudBackupStatusType(s.Status),
+		BytesDone:    s.BytesDone,
+		NodeId:       s.NodeID,
+		Info:         s.Info,
+		CredentialId: s.CredentialUUID,
+		SrcVolumeId:  s.SrcVolumeID,
+		EtaSeconds:   s.EtaSeconds,
+		BytesTotal:   s.BytesTotal,
+	}
+
+	status.StartTime, _ = ptypes.TimestampProto(s.StartTime)
+	status.CompletedTime, _ = ptypes.TimestampProto(s.CompletedTime)
+
+	return status
+}
+
+func (r *CloudBackupStatusResponse) ToSdkCloudBackupStatusResponse() *SdkCloudBackupStatusResponse {
+	resp := &SdkCloudBackupStatusResponse{
+		Statuses: make(map[string]*SdkCloudBackupStatus),
+	}
+
+	for k, v := range r.Statuses {
+		resp.Statuses[k] = v.ToSdkCloudBackupStatus()
+	}
+
+	return resp
+}
+
+func (h CloudBackupHistoryItem) ToSdkCloudBackupHistoryItem() *SdkCloudBackupHistoryItem {
+	item := &SdkCloudBackupHistoryItem{
+		SrcVolumeId: h.SrcVolumeID,
+		Status:      StringToSdkCloudBackupStatusType(h.Status),
+	}
+
+	item.Timestamp, _ = ptypes.TimestampProto(h.Timestamp)
+	return item
+}
+
+func (r *CloudBackupHistoryResponse) ToSdkCloudBackupHistoryResponse() *SdkCloudBackupHistoryResponse {
+	resp := &SdkCloudBackupHistoryResponse{
+		HistoryList: make([]*SdkCloudBackupHistoryItem, len(r.HistoryList)),
+	}
+
+	for i, v := range r.HistoryList {
+		resp.HistoryList[i] = v.ToSdkCloudBackupHistoryItem()
+	}
+
+	return resp
 }
