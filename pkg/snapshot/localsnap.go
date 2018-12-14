@@ -33,7 +33,7 @@ func (l *localSnapshotPlugin) CreateVolumeFromSnapshot(snapshotID, volumeType, v
 	locator := &api.VolumeLocator{
 		Name: vols[0].Locator.VolumeLabels["pvName"],
 	}
-	volumeID, err := volDriver.Snapshot(snapshotID, false, locator)
+	volumeID, err := volDriver.Snapshot(snapshotID, false, locator, true)
 	if err != nil {
 		return "", err
 	}
@@ -63,7 +63,7 @@ func (l *localSnapshotPlugin) CreateSnapshot(volumeID, volumeAZ string, tags map
 		Name:         tags["ark.heptio.com/backup"] + "_" + vols[0].Locator.Name,
 		VolumeLabels: tags,
 	}
-	snapshotID, err := volDriver.Snapshot(volumeID, true, locator)
+	snapshotID, err := volDriver.Snapshot(volumeID, true, locator, true)
 	if err != nil {
 		return "", err
 	}
