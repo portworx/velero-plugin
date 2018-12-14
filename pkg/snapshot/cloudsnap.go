@@ -52,6 +52,7 @@ func (c *cloudSnapshotPlugin) CreateVolumeFromSnapshot(snapshotID, volumeType, v
 	}
 
 	if volumeName == "" {
+		c.log.Infof("Error finding volume name for cloudsnap %v", snapshotID)
 		return "", fmt.Errorf("Couldn't find volume name from cloudsnap")
 	}
 
@@ -61,18 +62,19 @@ func (c *cloudSnapshotPlugin) CreateVolumeFromSnapshot(snapshotID, volumeType, v
 		RestoreVolumeName: volumeName,
 	})
 	if err != nil {
+		c.log.Infof("Error starting cloudsnap restore for %v to %v", snapshotID, volumeName)
 		return "", err
 	}
 
 	c.log.Infof("Started cloud snapshot restore %v to volume %v", snapshotID, response.RestoreVolumeID)
-	err = volume.CloudBackupWaitForCompletion(volDriver, response.RestoreVolumeID,
+	err = volume.CloudBackupWaitForCompletion(volDriver, response.Name,
 		api.CloudRestoreOp)
 	if err != nil {
 		c.log.Errorf("Error restoring %v to volume %v: %v", snapshotID, response.RestoreVolumeID, err)
 		return "", err
 	}
 
-	c.log.Infof("Finished cloud snapshot restore %v to volume %v", snapshotID, response.RestoreVolumeID)
+	c.log.Infof("Finished cloud snapshot restore %v for %v to volume %v", response.Name, snapshotID, response.RestoreVolumeID)
 	return response.RestoreVolumeID, nil
 }
 
@@ -86,7 +88,7 @@ func (c *cloudSnapshotPlugin) CreateSnapshot(volumeID, volumeAZ string, tags map
 		return "", err
 	}
 
-	err = volDriver.CloudBackupCreate(&api.CloudBackupCreateRequest{
+	createResp, err := volDriver.CloudBackupCreate(&api.CloudBackupCreateRequest{
 		VolumeID:       volumeID,
 		Full:           true,
 		CredentialUUID: c.credID,
@@ -95,20 +97,20 @@ func (c *cloudSnapshotPlugin) CreateSnapshot(volumeID, volumeAZ string, tags map
 		return "", err
 	}
 
-	response, err := volDriver.CloudBackupStatus(&api.CloudBackupStatusRequest{
-		SrcVolumeID: volumeID,
-	})
-	if err != nil {
-		return "", err
-	}
-	c.log.Infof("Started cloud snapshot backup %v for %v", response.Statuses[volumeID].ID, volumeID)
-	err = volume.CloudBackupWaitForCompletion(volDriver, volumeID, api.CloudBackupOp)
+	c.log.Infof("Started cloud snapshot backup %v for %v", createResp.Name, volumeID)
+	err = volume.CloudBackupWaitForCompletion(volDriver, createResp.Name, api.CloudBackupOp)
 	if err != nil {
 		c.log.Errorf("Error backing up volume %v: %v", volumeID, err)
 		return "", err
 	}
-	c.log.Infof("Finished cloud snapshot backup %v for %v", response.Statuses[volumeID].ID, volumeID)
-	return response.Statuses[volumeID].ID, nil
+	statusResponse, err := volDriver.CloudBackupStatus(&api.CloudBackupStatusRequest{
+		Name: createResp.Name,
+	})
+	if err != nil {
+		return "", err
+	}
+	c.log.Infof("Finished cloud snapshot backup %v for %v to %v", createResp.Name, volumeID, statusResponse.Statuses[createResp.Name].ID)
+	return statusResponse.Statuses[createResp.Name].ID, nil
 }
 
 func (c *cloudSnapshotPlugin) DeleteSnapshot(snapshotID string) error {
