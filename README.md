@@ -2,7 +2,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/portworx/ark-plugin)](https://goreportcard.com/report/portworx/ark-plugin)
 
 
-# ark-plugin
-Portworx plugin for Heptio Ark
+# velero-plugin
+Portworx plugin for Velero (formerly known as Heptio Ark)
 
 Instructions to deploy and use can be found here: https://docs.portworx.com/scheduler/kubernetes/ark.html
