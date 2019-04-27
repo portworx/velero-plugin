@@ -3,12 +3,14 @@ package snapshot
 import (
 	"fmt"
 
-	"github.com/heptio/ark/pkg/cloudprovider"
-	"github.com/heptio/ark/pkg/util/collections"
+	"github.com/heptio/velero/pkg/plugin/velero"
 	volumeclient "github.com/libopenstorage/openstorage/api/client/volume"
 	"github.com/libopenstorage/openstorage/volume"
+	"github.com/pkg/errors"
 	"github.com/portworx/sched-ops/k8s"
 	"github.com/sirupsen/logrus"
+	"k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -51,7 +53,7 @@ func getVolumeDriver() (volume.VolumeDriver, error) {
 // Plugin for managing Portworx snapshots
 type Plugin struct {
 	Log    logrus.FieldLogger
-	plugin cloudprovider.BlockStore
+	plugin velero.VolumeSnapshotter
 }
 
 // Init the plugin
@@ -91,22 +93,40 @@ func (p *Plugin) DeleteSnapshot(snapshotID string) error {
 }
 
 // GetVolumeID Get the volume ID from the spec
-func (p *Plugin) GetVolumeID(pv runtime.Unstructured) (string, error) {
-	if !collections.Exists(pv.UnstructuredContent(), "spec.portworxVolume") {
+func (p *Plugin) GetVolumeID(unstructuredPV runtime.Unstructured) (string, error) {
+	pv := new(v1.PersistentVolume)
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(unstructuredPV.UnstructuredContent(), pv); err != nil {
+		return "", errors.WithStack(err)
+	}
+
+	if pv.Spec.PortworxVolume == nil {
 		return "", nil
 	}
 
-	return collections.GetString(pv.UnstructuredContent(), "spec.portworxVolume.volumeID")
+	if pv.Spec.PortworxVolume.VolumeID == "" {
+		return "", errors.New("spec.portworxVolume.volumeID")
+	}
+
+	return pv.Spec.PortworxVolume.VolumeID, nil
 }
 
 // SetVolumeID Set the volume ID in the spec
-func (p *Plugin) SetVolumeID(pv runtime.Unstructured, volumeID string) (runtime.Unstructured, error) {
-	pwx, err := collections.GetMap(pv.UnstructuredContent(), "spec.portworxVolume")
-	if err != nil {
-		return nil, err
+func (p *Plugin) SetVolumeID(unstructuredPV runtime.Unstructured, volumeID string) (runtime.Unstructured, error) {
+	pv := new(v1.PersistentVolume)
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(unstructuredPV.UnstructuredContent(), pv); err != nil {
+		return nil, errors.WithStack(err)
 	}
 
-	pwx["volumeID"] = volumeID
+	if pv.Spec.PortworxVolume == nil {
+		return nil, errors.New("spec.portworxVolume not found")
+	}
 
-	return pv, nil
+	pv.Spec.PortworxVolume.VolumeID = volumeID
+
+	res, err := runtime.DefaultUnstructuredConverter.ToUnstructured(pv)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	return &unstructured.Unstructured{Object: res}, nil
 }

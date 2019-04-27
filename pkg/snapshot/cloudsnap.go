@@ -104,7 +104,7 @@ func (c *cloudSnapshotPlugin) CreateSnapshot(volumeID, volumeAZ string, tags map
 		return "", err
 	}
 	statusResponse, err := volDriver.CloudBackupStatus(&api.CloudBackupStatusRequest{
-		Name: createResp.Name,
+		ID: createResp.Name,
 	})
 	if err != nil {
 		return "", err

@@ -2,6 +2,7 @@ package snapshot
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/libopenstorage/openstorage/api"
 	"github.com/sirupsen/logrus"
@@ -59,8 +60,9 @@ func (l *localSnapshotPlugin) CreateSnapshot(volumeID, volumeAZ string, tags map
 	}
 
 	tags["pvName"] = vols[0].Locator.Name
+	l.log.Infof("Tags: %v", tags)
 	locator := &api.VolumeLocator{
-		Name:         tags["ark.heptio.com/backup"] + "_" + vols[0].Locator.Name,
+		Name:         strings.TrimSpace(tags["velero.io/backup"]) + "_" + vols[0].Locator.Name,
 		VolumeLabels: tags,
 	}
 	snapshotID, err := volDriver.Snapshot(volumeID, true, locator, true)

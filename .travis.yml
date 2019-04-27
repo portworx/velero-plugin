@@ -3,11 +3,11 @@ dist: trusty
 language: go
 
 go:
-  - 1.9.x
+  - 1.12.x
 
 script:
   - export TAG=${TRAVIS_BRANCH} 
-  - make check all-ci container &&
+  - make all check container &&
     if [ "${TRAVIS_BRANCH}" == "master" ] && [ "${TRAVIS_PULL_REQUEST}" == "false" ]; then
       docker login -u "${DOCKER_USER}" -p "${DOCKER_PASSWORD}";
       make deploy;

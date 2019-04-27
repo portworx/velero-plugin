@@ -1,14 +1,14 @@
 package main
 
 import (
-	"github.com/heptio/ark/pkg/plugin"
+	veleroplugin "github.com/heptio/velero/pkg/plugin/framework"
 	"github.com/portworx/ark-plugin/pkg/snapshot"
 	"github.com/sirupsen/logrus"
 )
 
 func main() {
-	plugin.NewServer(plugin.NewLogger()).
-		RegisterBlockStore("portworx", newSnapshotPlugin).
+	veleroplugin.NewServer().
+		RegisterVolumeSnapshotter("portworx.io/portworx", newSnapshotPlugin).
 		Serve()
 }
 

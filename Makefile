@@ -1,5 +1,5 @@
-# Copyright 2018 Portworx.
-# Copyright 2017 the Heptio Ark contributors.
+# Copyright 2018-2019 Portworx.
+# Copyright 2017, 2019 the Velero contributors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,76 +13,114 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-BINS = $(wildcard ark-*)
+# The binary to build (just the basename).
+BIN ?= $(wildcard velero-*)
 
-REPO ?= github.com/portworx/ark-plugin
+# This repo's root import path (under GOPATH).
+PKG := github.com/portworx/ark-plugin
 
-BUILD_IMAGE ?= gcr.io/heptio-images/golang:1.9-alpine3.6
+BUILD_IMAGE ?= golang:1.12-stretch
 
-IMAGE ?= portworx/ark-plugin
+IMAGE ?= portworx/velero-plugin
 TAG ?= latest
 
-ARCH ?= amd64
+# Which architecture to build - see $(ALL_ARCH) for options.
+# if the 'local' rule is being run, detect the ARCH from 'go env'
+# if it wasn't specified by the caller.
+local : ARCH ?= $(shell go env GOOS)-$(shell go env GOARCH)
+ARCH ?= linux-amd64
+
+platform_temp = $(subst -, ,$(ARCH))
+GOOS = $(word 1, $(platform_temp))
+GOARCH = $(word 2, $(platform_temp))
 
 ifndef PKGS
 PKGS := $(shell go list ./... 2>&1 | grep -v 'github.com/portworx/ark-plugin/vendor')
 endif
 
-all: $(addprefix build-, $(BINS))
+all: $(addprefix build-, $(BIN))
 
 build-%:
 	$(MAKE) --no-print-directory BIN=$* build
 
-build: _output/$(BIN)
+local: build-dirs
+	GOOS=$(GOOS) \
+	GOARCH=$(GOARCH) \
+	PKG=$(PKG) \
+	BIN=$(BIN) \
+	OUTPUT_DIR=$$(pwd)/_output/bin/$(GOOS)/$(GOARCH) \
+	./hack/build.sh
 
-_output/$(BIN): $(BIN)/*.go
-	mkdir -p .go/src/$(REPO) .go/pkg .go/std/$(ARCH) _output
-	docker run \
-				 --rm \
-				 -u $$(id -u):$$(id -g) \
-				 -v $$(pwd)/.go/pkg:/go/pkg \
-				 -v $$(pwd)/.go/src:/go/src \
-				 -v $$(pwd)/.go/std:/go/std \
-				 -v $$(pwd):/go/src/$(REPO) \
-				 -v $$(pwd)/.go/std/$(ARCH):/usr/local/go/pkg/linux_$(ARCH)_static \
-				 -e CGO_ENABLED=0 \
-				 -w /go/src/$(REPO) \
-				 $(BUILD_IMAGE) \
-				 go build -installsuffix "static" -i -v -o _output/$(BIN) ./$(BIN)
+build: _output/bin/$(GOOS)/$(GOARCH)/$(BIN)
 
-lint:
-	go get -v github.com/golang/lint/golint
-	for file in $$(find . -name '*.go' | grep -v vendor | grep -v '\.pb\.go' | grep -v '\.pb\.gw\.go'); do \
-		golint $${file}; \
-		if [ -n "$$(golint $${file})" ]; then \
-			exit 1; \
-		fi; \
-	done
+_output/bin/$(GOOS)/$(GOARCH)/$(BIN): build-dirs
+	@echo "building: $@"
+	$(MAKE) shell CMD="-c '\
+		GOOS=$(GOOS) \
+		GOARCH=$(GOARCH) \
+		PKG=$(PKG) \
+		BIN=$(BIN) \
+		OUTPUT_DIR=/output/$(GOOS)/$(GOARCH) \
+		./hack/build.sh'"
 
-vet:
-	go vet $(PKGS)
+TTY := $(shell tty -s && echo "-t")
 
-errcheck:
-	go get -v github.com/kisielk/errcheck
-	errcheck -verbose -blank $(PKGS)
+shell: build-dirs 
+	@echo "running docker: $@"
+	@docker run \
+		-e GOFLAGS \
+		-i $(TTY) \
+		--rm \
+		-u $$(id -u):$$(id -g) \
+		-v $$(pwd)/.go/pkg:/go/pkg \
+		-v $$(pwd)/.go/src:/go/src \
+		-v $$(pwd)/.go/std:/go/std \
+		-v $$(pwd):/go/src/$(PKG) \
+		-v $$(pwd)/.go/std/$(GOOS)/$(GOARCH):/usr/local/go/pkg/$(GOOS)_$(GOARCH)_static:delegated \
+		-v "$$(pwd)/.go/go-build:/.cache/go-build:delegated" \
+		-e CGO_ENABLED=0 \
+		-w /go/src/$(PKG) \
+		$(BUILD_IMAGE) \
+		go build -installsuffix "static" -i -v -o _output/bin/$(GOOS)/$(GOARCH)/$(BIN) ./$(BIN)
 
-check: lint errcheck vet
+build-dirs:
+	@mkdir -p _output/bin/$(GOOS)/$(GOARCH)
+	@mkdir -p .go/src/$(PKG) .go/pkg .go/bin .go/std/$(GOOS)/$(GOARCH) .go/go-build
 
 container: all
-	cp Dockerfile _output/Dockerfile
-	docker build -t $(IMAGE):$(TAG) -f _output/Dockerfile _output
+	cp Dockerfile _output/bin/$(GOOS)/$(GOARCH)/Dockerfile
+	docker build --no-cache -t $(IMAGE):$(TAG) -f _output/bin/$(GOOS)/$(GOARCH)/Dockerfile _output/bin/$(GOOS)/$(GOARCH)
 
 deploy: 
 	docker push $(IMAGE):$(TAG)
 
-all-ci: $(addprefix ci-, $(BINS))
+all-ci: $(addprefix ci-, $(BIN))
 
 ci-%:
 	$(MAKE) --no-print-directory BIN=$* ci
 
 ci:
 	mkdir -p _output
-	CGO_ENABLED=0 go build -v -o _output/$(BIN) ./$(BIN)
+	CGO_ENABLED=0 go build -v -o _output/bin/$(GOOS)/$(GOARCH)/$(BIN) ./$(BIN)
 
 clean:
+	@echo "cleaning"
 	rm -rf .go _output
+
+lint:
+	go get -u golang.org/x/lint/golint
+	for file in $$(find . -name '*.go' | grep -v vendor | grep -v '\.pb\.go' | grep -v '\.pb\.gw\.go'); do \
+		golint $${file}; \
+	    if [ -n "$$(golint $${file})" ]; then \
+	    	exit 1; \
+	    fi; \
+	done
+	
+vet:
+	go vet $(PKGS)
+	
+errcheck:
+	go get -v -u github.com/kisielk/errcheck
+	errcheck -verbose -blank $(PKGS)
+
+check: lint errcheck vet

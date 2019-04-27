@@ -13,8 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM alpine:3.6
+FROM debian:stretch-slim
 RUN mkdir /plugins
-ADD ark-* /plugins/
+ADD velero-* /plugins/
 USER nobody:nobody
-ENTRYPOINT ["/bin/ash", "-c", "cp -a /plugins/* /target/."]
+ENTRYPOINT ["/bin/bash", "-c", "cp -a /plugins/* /target/."]
