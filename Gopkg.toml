@@ -26,41 +26,29 @@
   go-tests = true
 
 [[override]]
-  name = "github.com/hashicorp/go-plugin"
-  revision = "e2fbc6864d18d3c37b6cde4297ec9fca266d28f1"
-
-[[override]]
   name = "google.golang.org/grpc"
-  version = "v1.12.0"
-
-[[override]]
-  name = "golang.org/x/sys"
-  revision = "43e60d72a8e2bd92ee98319ba9a384a0e9837c08"
-
-[[override]]
-  name = "github.com/libopenstorage/openstorage"
-  branch = "release-4.0"
-
-[[constraint]]
-  name = "github.com/heptio/ark"
-  version = "v0.10-beta.1"
-
-[[override]]
-  name = "github.com/Azure/go-autorest"
-  revision = "1ff28809256a84bb6966640ff3d0371af82ccba4"
-
-[[override]]
-  name = "github.com/Azure/azure-sdk-for-go"
-  version = "~11.3.0-beta"
-
-[[constraint]]
-  name = "k8s.io/apimachinery"
-  version = "kubernetes-1.11.0"
+  version = "v1.19.1"
 
 [[override]]
   name = "k8s.io/client-go"
-  version = "~8.0"
+  version = "~9.0"
+
+[[constraint]]
+  name = "k8s.io/apimachinery"
+  version = "kubernetes-1.12.0"
 
 [[override]]
-  name = "github.com/json-iterator/go"
-  revision = "f2b4162afba35581b6d4a50d3b8f34e33c144682"
+  name = "k8s.io/apiextensions-apiserver"
+  version = "kubernetes-1.12.0"
+
+[[override]]
+  name = "golang.org/x/sys"
+  branch = "master"
+
+[[override]]
+  name = "github.com/libopenstorage/openstorage"
+  branch = "release-6.0"
+
+[[constraint]]
+  name = "github.com/heptio/velero"
+  version = "v1.0.0-alpha.2"
