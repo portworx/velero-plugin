@@ -192,6 +192,7 @@ func (v *volumeClient) Snapshot(volumeID string,
 	if err := v.c.Post().Resource(snapPath).Body(request).Do().Unmarshal(response); err != nil {
 		return "", err
 	}
+
 	// TODO(pedge): this probably should not be embedded in this way
 	if response.VolumeCreateResponse != nil &&
 		response.VolumeCreateResponse.VolumeResponse != nil &&
@@ -538,14 +539,20 @@ func (v *volumeClient) CloudBackupCreate(
 // CloudBackupGroupCreate uploads snapshots of a volume group to cloud
 func (v *volumeClient) CloudBackupGroupCreate(
 	input *api.CloudBackupGroupCreateRequest,
-) error {
+) (*api.CloudBackupGroupCreateResponse, error) {
+
+	createResp := &api.CloudBackupGroupCreateResponse{}
 	req := v.c.Post().Resource(api.OsdBackupPath + "/group").Body(input)
 	response := req.Do()
 	if response.Error() != nil {
-		return response.FormatError()
+		return nil, response.FormatError()
 	}
 
-	return nil
+	if err := response.Unmarshal(&createResp); err != nil {
+		return nil, err
+	}
+
+	return createResp, nil
 }
 
 // CloudBackupRestore downloads a cloud backup to a newly created volume
@@ -737,12 +744,13 @@ func (v *volumeClient) CloudBackupSchedEnumerate() (*api.CloudBackupSchedEnumera
 	return enumerateResponse, nil
 }
 
-func (v *volumeClient) SnapshotGroup(groupID string, labels map[string]string) (*api.GroupSnapCreateResponse, error) {
+func (v *volumeClient) SnapshotGroup(groupID string, labels map[string]string, volumeIDs []string) (*api.GroupSnapCreateResponse, error) {
 
 	response := &api.GroupSnapCreateResponse{}
 	request := &api.GroupSnapCreateRequest{
-		Id:     groupID,
-		Labels: labels,
+		Id:        groupID,
+		Labels:    labels,
+		VolumeIds: volumeIDs,
 	}
 
 	req := v.c.Post().Resource(snapPath + "/snapshotgroup").Body(request)
