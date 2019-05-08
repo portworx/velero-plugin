@@ -17,7 +17,7 @@
 BIN ?= $(wildcard velero-*)
 
 # This repo's root import path (under GOPATH).
-PKG := github.com/portworx/ark-plugin
+PKG := github.com/portworx/velero-plugin
 
 BUILD_IMAGE ?= golang:1.12-stretch
 
@@ -35,7 +35,7 @@ GOOS = $(word 1, $(platform_temp))
 GOARCH = $(word 2, $(platform_temp))
 
 ifndef PKGS
-PKGS := $(shell go list ./... 2>&1 | grep -v 'github.com/portworx/ark-plugin/vendor')
+PKGS := $(shell go list ./... 2>&1 | grep -v 'github.com/portworx/velero-plugin/vendor')
 endif
 
 all: $(addprefix build-, $(BIN))

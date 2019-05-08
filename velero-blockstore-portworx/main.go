@@ -2,7 +2,7 @@ package main
 
 import (
 	veleroplugin "github.com/heptio/velero/pkg/plugin/framework"
-	"github.com/portworx/ark-plugin/pkg/snapshot"
+	"github.com/portworx/velero-plugin/pkg/snapshot"
 	"github.com/sirupsen/logrus"
 )
 
