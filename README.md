@@ -1,5 +1,5 @@
-[![Build Status](https://travis-ci.org/portworx/ark-plugin.svg?branch=master)](https://travis-ci.org/portworx/ark-plugin)
-[![Go Report Card](https://goreportcard.com/badge/github.com/portworx/ark-plugin)](https://goreportcard.com/report/portworx/ark-plugin)
+[![Build Status](https://travis-ci.org/portworx/velero-plugin.svg?branch=master)](https://travis-ci.org/portworx/velero-plugin)
+[![Go Report Card](https://goreportcard.com/badge/github.com/portworx/velero-plugin)](https://goreportcard.com/report/portworx/velero-plugin)
 
 
 # velero-plugin
