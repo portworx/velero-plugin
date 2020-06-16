@@ -35,9 +35,13 @@ func (c *cloudSnapshotPlugin) CreateVolumeFromSnapshot(snapshotID, volumeType, v
 	// volume name. Ark already has it so it can pass it down to us.
 	// CloudBackupRestore can also be updated to restore to the original volume
 	// name.
-	enumRequest := &api.CloudBackupEnumerateRequest{}
-	enumRequest.CredentialUUID = c.credID
-	enumRequest.All = true
+	enumRequest := &api.CloudBackupEnumerateRequest{
+		CloudBackupGenericRequest: api.CloudBackupGenericRequest{
+			CredentialUUID: c.credID,
+			CloudBackupID:  snapshotID,
+		},
+	}
+
 	enumResponse, err := volDriver.CloudBackupEnumerate(enumRequest)
 	if err != nil {
 		return "", err
