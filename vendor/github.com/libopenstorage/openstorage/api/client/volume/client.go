@@ -23,11 +23,17 @@ const (
 
 type volumeClient struct {
 	volume.IODriver
+	volume.FilesystemTrimDriver
+	volume.FilesystemCheckDriver
 	c *client.Client
 }
 
 func newVolumeClient(c *client.Client) volume.VolumeDriver {
-	return &volumeClient{volume.IONotSupported, c}
+	return &volumeClient{
+		IODriver:              volume.IONotSupported,
+		FilesystemTrimDriver:  volume.FilesystemTrimNotSupported,
+		FilesystemCheckDriver: volume.FilesystemCheckNotSupported,
+		c:                     c}
 }
 
 // String description of this driver.
@@ -700,6 +706,18 @@ func (v *volumeClient) CloudBackupSchedCreate(
 	return createResponse, nil
 }
 
+// CloudBackupSchedUpdate for a volume creates a schedule to backup volume to cloud
+func (v *volumeClient) CloudBackupSchedUpdate(
+	input *api.CloudBackupSchedUpdateRequest,
+) error {
+	req := v.c.Put().Resource(api.OsdBackupPath + "/sched").Body(input)
+	response := req.Do()
+	if response.Error() != nil {
+		return response.FormatError()
+	}
+	return nil
+}
+
 // CloudBackupGroupSchedCreate for a volume group creates a schedule to backup
 // volume group to the cloud
 func (v *volumeClient) CloudBackupGroupSchedCreate(
@@ -716,6 +734,20 @@ func (v *volumeClient) CloudBackupGroupSchedCreate(
 		return nil, err
 	}
 	return createResponse, nil
+}
+
+// CloudBackupGroupSchedUpdate for a volume group creates a schedule to backup
+// volume group to the cloud
+func (v *volumeClient) CloudBackupGroupSchedUpdate(
+	input *api.CloudBackupGroupSchedUpdateRequest,
+) error {
+	req := v.c.Put().Resource(api.OsdBackupPath + "/schedgroup").Body(input)
+	response := req.Do()
+	if response.Error() != nil {
+		return response.FormatError()
+	}
+
+	return nil
 }
 
 // CloudBackupSchedDelete delete a volume's cloud backup-schedule
@@ -744,13 +776,14 @@ func (v *volumeClient) CloudBackupSchedEnumerate() (*api.CloudBackupSchedEnumera
 	return enumerateResponse, nil
 }
 
-func (v *volumeClient) SnapshotGroup(groupID string, labels map[string]string, volumeIDs []string) (*api.GroupSnapCreateResponse, error) {
+func (v *volumeClient) SnapshotGroup(groupID string, labels map[string]string, volumeIDs []string, deleteOnFailure bool) (*api.GroupSnapCreateResponse, error) {
 
 	response := &api.GroupSnapCreateResponse{}
 	request := &api.GroupSnapCreateRequest{
-		Id:        groupID,
-		Labels:    labels,
-		VolumeIds: volumeIDs,
+		Id:              groupID,
+		Labels:          labels,
+		VolumeIds:       volumeIDs,
+		DeleteOnFailure: deleteOnFailure,
 	}
 
 	req := v.c.Post().Resource(snapPath + "/snapshotgroup").Body(request)
@@ -816,4 +849,13 @@ func (v *volumeClient) Catalog(id, subfolder, maxDepth string) (api.CatalogRespo
 	}
 
 	return catalog, nil
+}
+
+func (v *volumeClient) VolService(volumeID string, vsreq *api.VolumeServiceRequest) (*api.VolumeServiceResponse, error) {
+	vsresp := &api.VolumeServiceResponse{}
+
+	req := v.c.Post().Resource(volumePath + "/volservice").Instance(volumeID).Body(vsreq)
+	err := req.Do().Unmarshal(&vsresp)
+
+	return vsresp, err
 }

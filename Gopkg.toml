@@ -47,7 +47,7 @@
 
 [[override]]
   name = "github.com/libopenstorage/openstorage"
-  branch = "release-6.0"
+  branch = "release-8.0"
 
 [[constraint]]
   name = "github.com/heptio/velero"

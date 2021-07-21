@@ -109,6 +109,14 @@
   revision = "9cad4c3443a7200dd6400aef47183728de563a38"
 
 [[projects]]
+  digest = "1:e0e9e2e50fd3f7114cb81ebaf3ca056e476662e675c4b955ff96be94527961a3"
+  name = "github.com/grpc-ecosystem/go-grpc-middleware"
+  packages = ["util/metautils"]
+  pruneopts = "NUT"
+  revision = "3c51f7f332123e8be5a157c0802a228ac85bf9db"
+  version = "v1.2.0"
+
+[[projects]]
   digest = "1:5c3363169fc963321cd0789dda2ddff90562817d277e78011b0e1bbf51a6b473"
   name = "github.com/grpc-ecosystem/grpc-gateway"
   packages = [
@@ -196,8 +204,8 @@
   version = "1.8.1"
 
 [[projects]]
-  branch = "release-6.0"
-  digest = "1:43051aef0e42192f243665e8d1655e685a3e4a95fa86b414650b77ff8ef7279c"
+  branch = "release-8.0"
+  digest = "1:f880eb2ea834e2225b57e12ff4e9cbc6b972193606e94ee63f89cccc2c89a480"
   name = "github.com/libopenstorage/openstorage"
   packages = [
     "api",
@@ -205,10 +213,11 @@
     "api/client/volume",
     "api/errors",
     "pkg/auth",
+    "pkg/parser",
     "volume",
   ]
   pruneopts = "NUT"
-  revision = "f37e8be50233de6d345c93807ba068a4084322e3"
+  revision = "90d27c5ce91937446a885ad8dbc326e13307f186"
 
 [[projects]]
   branch = "master"
