@@ -5,4 +5,4 @@
 # velero-plugin
 Portworx plugin for Velero (formerly known as Heptio Ark)
 
-Instructions to deploy and use can be found here: https://docs.portworx.com/scheduler/kubernetes/ark.html
+Instructions to deploy and use can be found here: https://docs.portworx.com/portworx-install-with-kubernetes/storage-operations/disaster-recovery/
