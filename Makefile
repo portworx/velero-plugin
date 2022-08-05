@@ -38,6 +38,9 @@ ifndef PKGS
 PKGS := $(shell go list ./... 2>&1 | grep -v 'github.com/portworx/velero-plugin/vendor')
 endif
 
+.PHONY: clean vendor vendor-update
+
+
 all: $(addprefix build-, $(BIN))
 
 build-%:
@@ -115,7 +118,16 @@ lint:
 	    	exit 1; \
 	    fi; \
 	done
-	
+
+vendor-tidy:
+	go mod tidy
+
+vendor-update:
+	go mod download
+
+vendor:
+	go mod vendor
+
 vet:
 	go vet $(PKGS)
 	
