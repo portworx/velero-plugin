@@ -8,8 +8,6 @@ require (
 	github.com/cenkalti/backoff v2.0.0+incompatible // indirect
 	github.com/coreos/go-oidc v2.0.0+incompatible // indirect
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
-	github.com/ghodss/yaml v1.0.0 // indirect
-	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b // indirect
 	github.com/googleapis/gnostic v0.2.0 // indirect
 	github.com/gregjones/httpcache v0.0.0-20180305231024-9cad4c3443a7 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.2.0 // indirect
@@ -21,12 +19,8 @@ require (
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/kubernetes-incubator/external-storage v3.0.0-beta.2.0.20180221173544-7e0dccd17dd6+incompatible // indirect
 	github.com/libopenstorage/openstorage v8.0.1-0.20200605051610-90d27c5ce919+incompatible
-	github.com/mitchellh/go-testing-interface v0.0.0-20171004221916-a61a99592b77 // indirect
-	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
-	github.com/oklog/run v1.0.0 // indirect
 	github.com/pborman/uuid v1.2.1 // indirect
-	github.com/petar/GoLLRB v0.0.0-20130427215148-53be0d36a84c // indirect
 	github.com/peterbourgon/diskv v2.0.1+incompatible // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/portworx/sched-ops v0.0.0-20171211231306-0d57be53f951

@@ -19,7 +19,7 @@ BIN ?= $(wildcard velero-*)
 # This repo's root import path (under GOPATH).
 PKG := github.com/portworx/velero-plugin
 
-BUILD_IMAGE ?= golang:1.12-stretch
+BUILD_IMAGE ?= golang:1.17-buster
 
 IMAGE ?= portworx/velero-plugin
 TAG ?= latest
@@ -111,7 +111,7 @@ clean:
 	rm -rf .go _output
 
 lint:
-	go get -u golang.org/x/lint/golint
+	GO111MODULE=off go get -u golang.org/x/lint/golint
 	for file in $$(find . -name '*.go' | grep -v vendor | grep -v '\.pb\.go' | grep -v '\.pb\.gw\.go'); do \
 		golint $${file}; \
 	    if [ -n "$$(golint $${file})" ]; then \
@@ -132,7 +132,7 @@ vet:
 	go vet $(PKGS)
 	
 errcheck:
-	go get -v -u github.com/kisielk/errcheck
+	GO111MODULE=off go get -v -u github.com/kisielk/errcheck
 	errcheck -verbose -blank $(PKGS)
 
 check: lint errcheck vet
