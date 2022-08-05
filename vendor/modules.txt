@@ -12,13 +12,11 @@ github.com/coreos/go-oidc
 ## explicit
 github.com/dgrijalva/jwt-go
 # github.com/ghodss/yaml v1.0.0
-## explicit
 github.com/ghodss/yaml
 # github.com/gogo/protobuf v1.2.1
 github.com/gogo/protobuf/proto
 github.com/gogo/protobuf/sortkeys
 # github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
-## explicit
 github.com/golang/glog
 # github.com/golang/protobuf v1.5.2
 github.com/golang/protobuf/jsonpb
@@ -91,10 +89,8 @@ github.com/libopenstorage/openstorage/pkg/auth
 github.com/libopenstorage/openstorage/pkg/parser
 github.com/libopenstorage/openstorage/volume
 # github.com/mitchellh/go-testing-interface v0.0.0-20171004221916-a61a99592b77
-## explicit
 github.com/mitchellh/go-testing-interface
 # github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd
-## explicit
 github.com/modern-go/concurrent
 # github.com/modern-go/reflect2 v1.0.2
 github.com/modern-go/reflect2
@@ -102,13 +98,10 @@ github.com/modern-go/reflect2
 ## explicit
 github.com/mohae/deepcopy
 # github.com/oklog/run v1.0.0
-## explicit
 github.com/oklog/run
 # github.com/pborman/uuid v1.2.1
 ## explicit
 github.com/pborman/uuid
-# github.com/petar/GoLLRB v0.0.0-20130427215148-53be0d36a84c
-## explicit
 # github.com/peterbourgon/diskv v2.0.1+incompatible
 ## explicit
 github.com/peterbourgon/diskv
