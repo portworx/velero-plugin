@@ -6,6 +6,7 @@ import (
 	"github.com/libopenstorage/openstorage/api"
 	"github.com/libopenstorage/openstorage/volume"
 	"github.com/sirupsen/logrus"
+	"k8s.io/apimachinery/pkg/util/uuid"
 )
 
 const (
@@ -32,7 +33,7 @@ func (c *cloudSnapshotPlugin) CreateVolumeFromSnapshot(snapshotID, volumeType, v
 	}
 
 	// Enumerating can be expensive but we need to do it to get the original
-	// volume name. Ark already has it so it can pass it down to us.
+	// volume name. Velero already has it so it can pass it down to us.
 	// CloudBackupRestore can also be updated to restore to the original volume
 	// name.
 	enumRequest := &api.CloudBackupEnumerateRequest{
@@ -47,39 +48,43 @@ func (c *cloudSnapshotPlugin) CreateVolumeFromSnapshot(snapshotID, volumeType, v
 		return "", err
 	}
 
-	volumeName := ""
+	srcVolumeName := ""
 	for _, backup := range enumResponse.Backups {
 		if backup.ID == snapshotID {
-			volumeName = backup.SrcVolumeName
+			srcVolumeName = backup.SrcVolumeName
 			break
 		}
 	}
 
-	if volumeName == "" {
-		c.log.Infof("Error finding volume name for cloudsnap %v", snapshotID)
-		return "", fmt.Errorf("Couldn't find volume name from cloudsnap")
+	if srcVolumeName == "" {
+		msg := fmt.Sprintf("could not find backup associated with ID: %v", snapshotID)
+		c.log.Infof(msg)
+		return "", fmt.Errorf("%v", msg)
 	}
+
+	// Create a new name for restore PV
+	restorePVName := "pvc-" + string(uuid.NewUUID())
 
 	response, err := volDriver.CloudBackupRestore(&api.CloudBackupRestoreRequest{
 		ID:                snapshotID,
 		CredentialUUID:    c.credID,
-		RestoreVolumeName: volumeName,
+		RestoreVolumeName: restorePVName,
 	})
 	if err != nil {
-		c.log.Infof("Error starting cloudsnap restore for %v to %v", snapshotID, volumeName)
+		c.log.Infof("Error starting cloudsnap restore from snapshot %v (source volume %v) to %v", snapshotID, srcVolumeName, restorePVName)
 		return "", err
 	}
 
-	c.log.Infof("Started cloud snapshot restore %v to volume %v", snapshotID, response.RestoreVolumeID)
+	c.log.Infof("Started cloud snapshot restore %v to volume %v", snapshotID, restorePVName)
 	err = volume.CloudBackupWaitForCompletion(volDriver, response.Name,
 		api.CloudRestoreOp)
 	if err != nil {
-		c.log.Errorf("Error restoring %v to volume %v: %v", snapshotID, response.RestoreVolumeID, err)
+		c.log.Errorf("Error restoring %v to volume %v: %v", snapshotID, restorePVName, err)
 		return "", err
 	}
 
-	c.log.Infof("Finished cloud snapshot restore %v for %v to volume %v", response.Name, snapshotID, response.RestoreVolumeID)
-	return response.RestoreVolumeID, nil
+	c.log.Infof("Finished cloud snapshot restore %v for %v to volume %v", response.Name, snapshotID, restorePVName)
+	return restorePVName, nil
 }
 
 func (c *cloudSnapshotPlugin) GetVolumeInfo(volumeID, volumeAZ string) (string, *int64, error) {
