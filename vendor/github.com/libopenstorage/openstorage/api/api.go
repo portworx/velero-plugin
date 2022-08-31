@@ -11,6 +11,7 @@ import (
 	"github.com/golang/protobuf/ptypes"
 	"github.com/libopenstorage/openstorage/pkg/auth"
 	"github.com/mohae/deepcopy"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 )
 
 // Strings for VolumeSpec
@@ -60,6 +61,16 @@ const (
 	SpecExportProtocolCustom = "custom"
 	SpecExportOptions        = "export_options"
 	SpecExportOptionsEmpty   = "empty_export_options"
+	SpecMountOptions         = "mount_options"
+	SpecCSIMountOptions      = "csi_mount_options"
+	SpecSharedv4MountOptions = "sharedv4_mount_options"
+	SpecProxyProtocolS3      = "s3"
+	SpecProxyProtocolPXD     = "pxd"
+	SpecProxyProtocolNFS     = "nfs"
+	SpecProxyEndpoint        = "proxy_endpoint"
+	SpecProxyNFSSubPath      = "proxy_nfs_subpath"
+	SpecProxyNFSExportPath   = "proxy_nfs_exportpath"
+	SpecProxyS3Bucket        = "proxy_s3_bucket"
 	// SpecBestEffortLocationProvisioning default is false. If set provisioning request will succeed
 	// even if specified data location parameters could not be satisfied.
 	SpecBestEffortLocationProvisioning = "best_effort_location_provisioning"
@@ -70,10 +81,33 @@ const (
 	// SpecMatchSrcVolProvision defaults to false. Applicable to cloudbackup restores only.
 	// If set to "true", cloudbackup restore volume gets provisioned on same pools as
 	// backup, allowing for inplace restore after.
-	SpecMatchSrcVolProvision = "match_src_vol_provision"
-	SpecNodiscard            = "nodiscard"
-	StoragePolicy            = "storagepolicy"
-	SpecCowOnDemand          = "cow_ondemand"
+	SpecMatchSrcVolProvision                = "match_src_vol_provision"
+	SpecNodiscard                           = "nodiscard"
+	StoragePolicy                           = "storagepolicy"
+	SpecCowOnDemand                         = "cow_ondemand"
+	SpecDirectIo                            = "direct_io"
+	SpecScanPolicyTrigger                   = "scan_policy_trigger"
+	SpecScanPolicyAction                    = "scan_policy_action"
+	SpecProxyWrite                          = "proxy_write"
+	SpecSharedv4ServiceType                 = "sharedv4_svc_type"
+	SpecSharedv4ServiceName                 = "sharedv4_svc_name"
+	SpecSharedv4FailoverStrategy            = "sharedv4_failover_strategy"
+	SpecSharedv4FailoverStrategyNormal      = "normal"
+	SpecSharedv4FailoverStrategyAggressive  = "aggressive"
+	SpecSharedv4FailoverStrategyUnspecified = ""
+	SpecSharedv4ExternalAccess              = "sharedv4_external_access"
+	SpecFastpath                            = "fastpath"
+	SpecAutoFstrim                          = "auto_fstrim"
+	SpecBackendVolName                      = "pure_vol_name"
+	SpecBackendType                         = "backend"
+	SpecBackendPureBlock                    = "pure_block"
+	SpecBackendPureFile                     = "pure_file"
+	SpecPureFileExportRules                 = "pure_export_rules"
+	SpecIoThrottleRdIOPS                    = "io_throttle_rd_iops"
+	SpecIoThrottleWrIOPS                    = "io_throttle_wr_iops"
+	SpecIoThrottleRdBW                      = "io_throttle_rd_bw"
+	SpecIoThrottleWrBW                      = "io_throttle_wr_bw"
+	SpecReadahead                           = "readahead"
 )
 
 // OptionKey specifies a set of recognized query params.
@@ -109,7 +143,7 @@ const (
 	// OptCredDisablePathStyle does not enforce path style for s3
 	OptCredDisablePathStyle = "CredDisablePathStyle"
 	// OptCredStorageClass indicates the storage class to be used for puts
-	// allowed values are STANDARD and STANDARD_IA
+	// allowed values are STANDARD, STANDARD_IA,ONEZONE_IA, REDUCED_REDUNDANCY
 	OptCredStorageClass = "CredStorageClass"
 	// OptCredEndpoint indicate the cloud endpoint
 	OptCredEndpoint = "CredEndpoint"
@@ -135,6 +169,8 @@ const (
 	OptCredProxy = "CredProxy"
 	// OptCredIAMPolicy if "true", indicates IAM creds to be used
 	OptCredIAMPolicy = "CredIAMPolicy"
+	// OptRemoteCredUUID is the UUID of the remote cluster credential
+	OptRemoteCredUUID = "RemoteCredUUID"
 	// OptCloudBackupID is the backID in the cloud
 	OptCloudBackupID = "CloudBackID"
 	// OptCloudBackupIgnoreCreds ignores credentials for incr backups
@@ -172,17 +208,9 @@ const (
 	AutoAggregation = math.MaxUint32
 )
 
-// The main goal of the following label keys is for the Kubernetes intree middleware
-// to keep track of the source location of the PVC with labels that cannot be modified
-// by the owner of the volume, but only by the storage administrator.
 const (
-	// KubernetesPvcNameKey is a label on the openstorage volume
-	// which tracks the source PVC for the volume.
-	KubernetesPvcNameKey = "openstorage.io/pvc-name"
-
-	// KubernetesPvcNamespaceKey is a label on the openstorage volume
-	// which tracks the source PVC namespace for the volume
-	KubernetesPvcNamespaceKey = "openstorage.io/pvc-namespace"
+	// gRPC root path used to extract service and API information
+	SdkRootPath = "openstorage.api.OpenStorage"
 )
 
 // Node describes the state of a node.
@@ -232,6 +260,10 @@ type Node struct {
 	GossipPort string
 	// HWType is the type of the underlying hardware used by the node
 	HWType HardwareType
+	// Determine if the node is secure with authentication and authorization
+	SecurityStatus StorageNode_SecurityStatus
+	// SchedulerTopology topology information of the node in scheduler context
+	SchedulerTopology *SchedulerTopology
 }
 
 // FluentDConfig describes ip and port of a fluentdhost.
@@ -258,7 +290,7 @@ type Cluster struct {
 	NodeId string
 
 	// array of all the nodes in the cluster.
-	Nodes []Node
+	Nodes []*Node
 
 	// Management url for the cluster
 	ManagementURL string
@@ -277,6 +309,14 @@ type CredCreateRequest struct {
 type CredCreateResponse struct {
 	// UUID of the credential that was just created
 	UUID string
+}
+
+// CredUpdateRequest is the input for CredsUpdate command
+type CredUpdateRequest struct {
+	// Name or the UUID of the credential being updated
+	Name string
+	// InputParams is map describing cloud provide
+	InputParams map[string]string
 }
 
 // StatPoint represents the basic structure of a single Stat reported
@@ -306,11 +346,14 @@ type CloudBackupCreateRequest struct {
 	// Labels are list of key value pairs to tag the cloud backup. These labels
 	// are stored in the metadata associated with the backup.
 	Labels map[string]string
-	// FullBackupFrequency indicates number of incremental backup after whcih
+	// FullBackupFrequency indicates number of incremental backup after which
 	// a fullbackup must be created. This is to override the default value for
 	// manual/user triggerred backups and not applicable for scheduled backups.
 	// Value of 0 retains the default behavior.
 	FullBackupFrequency uint32
+	// DeleteLocal indicates if local snap must be deleted after the
+	// backup is complete
+	DeleteLocal bool
 }
 
 type CloudBackupCreateResponse struct {
@@ -331,6 +374,9 @@ type CloudBackupGroupCreateRequest struct {
 	CredentialUUID string
 	// Full indicates if full backup is desired even though incremental is possible
 	Full bool
+	// DeleteLocal indicates if local snap must be deleted after the
+	// backup is complete
+	DeleteLocal bool
 }
 
 type CloudBackupRestoreRequest struct {
@@ -384,8 +430,16 @@ type CloudBackupGenericRequest struct {
 	// MetadataFilter indicates backups whose metadata has these kv pairs
 	MetadataFilter map[string]string
 	// CloudBackupID must be specified if one needs to enumerate known single
-	// backup( format is clusteruuidORBucketName/srcVolId-SnapId(-incr)
+	// backup (format is clusteruuidORBucketName/srcVolId-SnapId(-incr). If t\
+	// this is specified, everything else n the command is ignored
 	CloudBackupID string
+	// MissingSrcVol set to true enumerates cloudbackups for which srcVol is not
+	// present in the cluster. Either the source volume is deleted or the
+	// cloudbackup belongs to other cluster.( with older version this
+	// information may be missing, and in such a case these will list as
+	// missing cluster info field in enumeration). Specifying SrcVolumeID and
+	// this flag at the same time is an error
+	MissingSrcVolumes bool
 }
 
 type CloudBackupInfo struct {
@@ -402,6 +456,11 @@ type CloudBackupInfo struct {
 	Metadata map[string]string
 	// Status indicates the status of the backup
 	Status string
+	// ClusterType indicates if the cloudbackup was uploaded by this
+	// cluster. Could be unknown with older version cloudbackups
+	ClusterType SdkCloudBackupClusterType
+	// Namespace to which this cloudbackup belongs to
+	Namespace string
 }
 
 type CloudBackupEnumerateRequest struct {
@@ -569,7 +628,7 @@ type CloudBackupScheduleInfo struct {
 	SrcVolumeID string
 	// CredentialUUID is the cloud credential used with this schedule
 	CredentialUUID string
-	// Schedule is the frequence of backup
+	// Schedule is the frequencies of backup
 	Schedule string
 	// MaxBackups are the maximum number of backups retained
 	// in cloud.Older backups are deleted
@@ -743,6 +802,17 @@ func (x IoProfile) SimpleString() string {
 	return simpleString("io_profile", IoProfile_name, int32(x))
 }
 
+// ProxyProtocolSimpleValueOf returns the string format of ProxyProtocol
+func ProxyProtocolSimpleValueOf(s string) (ProxyProtocol, error) {
+	obj, err := simpleValueOf("proxy_protocol", ProxyProtocol_value, s)
+	return ProxyProtocol(obj), err
+}
+
+// SimpleString returns the string format of ProxyProtocol
+func (x ProxyProtocol) SimpleString() string {
+	return simpleString("proxy_protocol", ProxyProtocol_name, int32(x))
+}
+
 func simpleValueOf(typeString string, valueMap map[string]int32, s string) (int32, error) {
 	obj, ok := valueMap[strings.ToUpper(fmt.Sprintf("%s_%s", typeString, s))]
 	if !ok {
@@ -757,6 +827,28 @@ func simpleString(typeString string, nameMap map[int32]string, v int32) string {
 		return strconv.Itoa(int(v))
 	}
 	return strings.TrimPrefix(strings.ToLower(s), fmt.Sprintf("%s_", strings.ToLower(typeString)))
+}
+
+// ScanPolicyTriggerValueof returns value of string
+func ScanPolicy_ScanTriggerSimpleValueOf(s string) (ScanPolicy_ScanTrigger, error) {
+	obj, err := simpleValueOf("scan_trigger", ScanPolicy_ScanTrigger_value, s)
+	return ScanPolicy_ScanTrigger(obj), err
+}
+
+// SimpleString returns the string format of ScanPolicy_ScanTrigger
+func (x ScanPolicy_ScanTrigger) SimpleString() string {
+	return simpleString("scan_trigger", ScanPolicy_ScanTrigger_name, int32(x))
+}
+
+// ScanPolicyActioinValueof returns value of string
+func ScanPolicy_ScanActionSimpleValueOf(s string) (ScanPolicy_ScanAction, error) {
+	obj, err := simpleValueOf("scan_action", ScanPolicy_ScanAction_value, s)
+	return ScanPolicy_ScanAction(obj), err
+}
+
+// SimpleString returns the string format of ScanPolicy_ScanAction
+func (x ScanPolicy_ScanAction) SimpleString() string {
+	return simpleString("scan_action", ScanPolicy_ScanAction_name, int32(x))
 }
 
 func toSec(ms uint64) uint64 {
@@ -891,6 +983,8 @@ func (s *Node) ToStorageNode() *StorageNode {
 		DataIp:            s.DataIp,
 		Hostname:          s.Hostname,
 		HWType:            s.HWType,
+		SecurityStatus:    s.SecurityStatus,
+		SchedulerTopology: s.SchedulerTopology,
 	}
 
 	node.Disks = make(map[string]*StorageResource)
@@ -994,6 +1088,8 @@ func (b *CloudBackupInfo) ToSdkCloudBackupInfo() *SdkCloudBackupInfo {
 		SrcVolumeId:   b.SrcVolumeID,
 		SrcVolumeName: b.SrcVolumeName,
 		Metadata:      b.Metadata,
+		ClusterType:   b.ClusterType,
+		Namespace:     b.Namespace,
 	}
 
 	info.Timestamp, _ = ptypes.TimestampProto(b.Timestamp)
@@ -1129,6 +1225,10 @@ func (v *VolumeSpec) IsPublic(accessType Ownership_AccessType) bool {
 	return v.GetOwnership() == nil || v.GetOwnership().IsPublic(accessType)
 }
 
+func (v *VolumeSpec) IsPureVolume() bool {
+	return v.GetProxySpec() != nil && v.GetProxySpec().IsPureBackend()
+}
+
 // GetCloneCreatorOwnership returns the appropriate ownership for the
 // new snapshot and if an update is required
 func (v *VolumeSpec) GetCloneCreatorOwnership(ctx context.Context) (*Ownership, bool) {
@@ -1226,6 +1326,46 @@ func (v *Volume) IsAttached() bool {
 type TokenSecretContext struct {
 	SecretName      string
 	SecretNamespace string
-	PvcName         string
-	PvcNamespace    string
+}
+
+// ParseProxyEndpoint parses the proxy endpoint and returns the
+// proxy protocol and the endpoint
+func ParseProxyEndpoint(proxyEndpoint string) (ProxyProtocol, string) {
+	if len(proxyEndpoint) == 0 {
+		return ProxyProtocol_PROXY_PROTOCOL_INVALID, ""
+	}
+	tokens := strings.Split(proxyEndpoint, "://")
+	if len(tokens) == 1 {
+		return ProxyProtocol_PROXY_PROTOCOL_INVALID, tokens[0]
+	} else if len(tokens) == 2 {
+		switch tokens[0] {
+		case SpecProxyProtocolS3:
+			return ProxyProtocol_PROXY_PROTOCOL_S3, tokens[1]
+		case SpecProxyProtocolNFS:
+			return ProxyProtocol_PROXY_PROTOCOL_NFS, tokens[1]
+		case SpecProxyProtocolPXD:
+			return ProxyProtocol_PROXY_PROTOCOL_PXD, tokens[1]
+		default:
+			return ProxyProtocol_PROXY_PROTOCOL_INVALID, tokens[1]
+		}
+	}
+	return ProxyProtocol_PROXY_PROTOCOL_INVALID, ""
+}
+
+func (s *ProxySpec) IsPureBackend() bool {
+	return s.ProxyProtocol == ProxyProtocol_PROXY_PROTOCOL_PURE_BLOCK ||
+		s.ProxyProtocol == ProxyProtocol_PROXY_PROTOCOL_PURE_FILE
+}
+
+func (s *ProxySpec) IsPureImport() bool {
+	if !s.IsPureBackend() {
+		return false
+	}
+
+	return (s.PureBlockSpec != nil && s.PureBlockSpec.FullVolName != "") || (s.PureFileSpec != nil && s.PureFileSpec.FullVolName != "")
+}
+
+// GetAllEnumInfo returns an EnumInfo for every proto enum
+func GetAllEnumInfo() []protoimpl.EnumInfo {
+	return file_api_api_proto_enumTypes
 }
