@@ -2,6 +2,7 @@ package snapshot
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/libopenstorage/openstorage/api"
 	"github.com/libopenstorage/openstorage/volume"
@@ -11,10 +12,12 @@ import (
 
 const (
 	configCred = "credId"
+	incrementalCountLabel            = "portworx.io/cloudsnap-incremental-count"
 )
 
 type cloudSnapshotPlugin struct {
 	Plugin
+	pxClient *portworxClient
 	log    logrus.FieldLogger
 	credID string
 }
@@ -27,7 +30,7 @@ func (c *cloudSnapshotPlugin) Init(config map[string]string) error {
 }
 
 func (c *cloudSnapshotPlugin) CreateVolumeFromSnapshot(snapshotID, volumeType, volumeAZ string, iops *int64) (string, error) {
-	volDriver, err := getVolumeDriver()
+	volDriver, err := c.pxClient.getVolumeDriver()
 	if err != nil {
 		return "", err
 	}
@@ -92,16 +95,28 @@ func (c *cloudSnapshotPlugin) GetVolumeInfo(volumeID, volumeAZ string) (string, 
 }
 
 func (c *cloudSnapshotPlugin) CreateSnapshot(volumeID, volumeAZ string, tags map[string]string) (string, error) {
-	volDriver, err := getVolumeDriver()
+	volDriver, err := c.pxClient.getVolumeDriver()
 	if err != nil {
 		return "", err
 	}
 
-	createResp, err := volDriver.CloudBackupCreate(&api.CloudBackupCreateRequest{
+	request := &api.CloudBackupCreateRequest{
 		VolumeID:       volumeID,
-		Full:           true,
 		CredentialUUID: c.credID,
-	})
+	}
+	if incrementalCount, ok := tags[incrementalCountLabel]; ok && len(incrementalCount) > 0 {
+		incrementalCount, err := strconv.ParseUint(incrementalCount, 10, 32)
+		if err != nil {
+			return "", fmt.Errorf("invalid cloudsnap-incremental-count specified: %v", err)
+		}
+		if incrementalCount <= 0 {
+			request.Full = true
+		} else {
+			request.FullBackupFrequency = uint32(incrementalCount)
+			request.Full = false
+		}
+	}
+	createResp, err := volDriver.CloudBackupCreate(request)
 	if err != nil {
 		return "", err
 	}
@@ -123,7 +138,7 @@ func (c *cloudSnapshotPlugin) CreateSnapshot(volumeID, volumeAZ string, tags map
 }
 
 func (c *cloudSnapshotPlugin) DeleteSnapshot(snapshotID string) error {
-	volDriver, err := getVolumeDriver()
+	volDriver, err := c.pxClient.getVolumeDriver()
 	if err != nil {
 		return err
 	}
