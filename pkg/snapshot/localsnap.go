@@ -2,14 +2,20 @@ package snapshot
 
 import (
 	"fmt"
+	"golang.org/x/net/context"
 	"strings"
 
 	"github.com/libopenstorage/openstorage/api"
 	"github.com/sirupsen/logrus"
 )
 
+const (
+	pxdDriverName = "pxd.portworx.com"
+)
+
 type localSnapshotPlugin struct {
 	Plugin
+	pxClient *portworxClient
 	log logrus.FieldLogger
 }
 
@@ -19,7 +25,7 @@ func (l *localSnapshotPlugin) Init(config map[string]string) error {
 }
 
 func (l *localSnapshotPlugin) CreateVolumeFromSnapshot(snapshotID, volumeType, volumeAZ string, iops *int64) (string, error) {
-	volDriver, err := getVolumeDriver()
+	volDriver, err := l.pxClient.getVolumeDriver()
 	if err != nil {
 		return "", err
 	}
@@ -46,7 +52,7 @@ func (l *localSnapshotPlugin) GetVolumeInfo(volumeID, volumeAZ string) (string, 
 }
 
 func (l *localSnapshotPlugin) CreateSnapshot(volumeID, volumeAZ string, tags map[string]string) (string, error) {
-	volDriver, err := getVolumeDriver()
+	volDriver, err := l.pxClient.getVolumeDriver()
 	if err != nil {
 		return "", err
 	}
@@ -74,10 +80,10 @@ func (l *localSnapshotPlugin) CreateSnapshot(volumeID, volumeAZ string, tags map
 }
 
 func (l *localSnapshotPlugin) DeleteSnapshot(snapshotID string) error {
-	volDriver, err := getVolumeDriver()
+	volDriver, err := l.pxClient.getVolumeDriver()
 	if err != nil {
 		return err
 	}
 
-	return volDriver.Delete(snapshotID)
+	return volDriver.Delete(context.Background(), snapshotID)
 }
