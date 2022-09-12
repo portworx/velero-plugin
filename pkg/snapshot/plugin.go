@@ -2,6 +2,7 @@ package snapshot
 
 import (
 	"crypto/tls"
+	"os"
 	"fmt"
 	apiclient "github.com/libopenstorage/openstorage/api/client"
 	"github.com/libopenstorage/openstorage/pkg/auth"
@@ -76,6 +77,11 @@ func (p *Plugin) Init(config map[string]string) error {
 		p.pxClient.namespace = defaultNamespace
 	}
 
+	if err := os.Setenv(pxNamespaceKey, p.pxClient.namespace); err != nil {
+		p.Log.Errorf("Failed to set Portworx namespace: %v", err)
+	} else {
+		p.Log.Infof("Using namespace: %v", p.pxClient.namespace)
+	}
 	if pxSharedSecret, ok := config[pxSharedSecretKey]; ok && len(pxSharedSecret) > 0 {
 		p.pxClient.jwtSharedSecret = pxSharedSecret
 	}
